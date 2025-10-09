@@ -30,25 +30,26 @@ async function main() {
     logger.info('\nWaiting 10 seconds for source processing...');
     await new Promise((resolve) => setTimeout(resolve, 10000));
 
-    // T010: Generate Audio Overview
-    logger.info('\n=== Test 3: Generate Audio Overview ===');
+    // T010 & T011: Generate Audio and Video Overview in parallel
+    logger.info('\n=== Test 3: Generate Audio and Video Overview (Parallel) ===');
     logger.info('⚠️  This may take several minutes...');
-    await automation.generateAudioOverview();
-    logger.info('✓ Audio Overview generated');
-
-    // T011: Generate Video Overview
-    logger.info('\n=== Test 4: Generate Video Overview ===');
-    logger.info('⚠️  This may take several minutes...');
-    await automation.generateVideoOverview();
-    logger.info('✓ Video Overview generated');
+    await automation.generateBothOverviews();
+    logger.info('✓ Both Audio and Video Overviews generated');
 
     // Test download (optional)
-    logger.info('\n=== Test 5: Download Media (Optional) ===');
+    logger.info('\n=== Test 4: Download Media (Optional) ===');
     try {
       const audioBuffer = await automation.downloadMedia('audio');
       logger.info('✓ Audio downloaded', { size: audioBuffer.length });
     } catch (error) {
       logger.warn('Audio download skipped or failed', { error });
+    }
+
+    try {
+      const videoBuffer = await automation.downloadMedia('video');
+      logger.info('✓ Video downloaded', { size: videoBuffer.length });
+    } catch (error) {
+      logger.warn('Video download skipped or failed', { error });
     }
 
     logger.info('\n=== All Tests Passed! ===');

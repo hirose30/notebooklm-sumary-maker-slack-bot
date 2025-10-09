@@ -1,0 +1,462 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Internal Processing API",
+    "description": "Internal API for managing NotebookLM processing requests",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/api/requests": {
+      "post": {
+        "summary": "Create processing request",
+        "description": "Submit a new URL for NotebookLM processing",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CreateRequestPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Request created and queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "get": {
+        "summary": "List processing requests",
+        "description": "Get list of processing requests with optional filters",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["pending", "queued", "processing", "uploading", "completed", "failed"]
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 20
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 0
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of requests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requests": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProcessingRequest"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/requests/{requestId}": {
+      "get": {
+        "summary": "Get request status",
+        "description": "Retrieve status and details of a processing request",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingRequestDetail"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Request not found"
+          }
+        }
+      }
+    },
+    "/api/requests/{requestId}/retry": {
+      "post": {
+        "summary": "Retry failed request",
+        "description": "Retry a failed processing request",
+        "parameters": [
+          {
+            "name": "requestId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Request queued for retry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProcessingRequest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request cannot be retried"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health check",
+        "description": "Check service health and dependencies",
+        "responses": {
+          "200": {
+            "description": "Service is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthStatus"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/metrics": {
+      "get": {
+        "summary": "Get metrics",
+        "description": "Retrieve service metrics",
+        "responses": {
+          "200": {
+            "description": "Current metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Metrics"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "CreateRequestPayload": {
+        "type": "object",
+        "required": ["url", "slack_context"],
+        "properties": {
+          "url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL to process"
+          },
+          "slack_context": {
+            "type": "object",
+            "required": ["thread_ts", "channel_id", "user_id"],
+            "properties": {
+              "thread_ts": {
+                "type": "string"
+              },
+              "channel_id": {
+                "type": "string"
+              },
+              "user_id": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "ProcessingRequest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "url": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["pending", "queued", "processing", "uploading", "completed", "failed"]
+          },
+          "slack_thread_ts": {
+            "type": "string"
+          },
+          "slack_channel_id": {
+            "type": "string"
+          },
+          "slack_user_id": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          }
+        }
+      },
+      "ProcessingRequestDetail": {
+        "allOf": [
+          {
+            "$ref": "#/components/schemas/ProcessingRequest"
+          },
+          {
+            "type": "object",
+            "properties": {
+              "media": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/OverviewMedia"
+                }
+              },
+              "metadata": {
+                "type": "object",
+                "properties": {
+                  "retry_count": {
+                    "type": "integer"
+                  },
+                  "processing_duration_ms": {
+                    "type": "integer"
+                  },
+                  "notebook_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ]
+      },
+      "OverviewMedia": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "media_type": {
+            "type": "string",
+            "enum": ["audio", "video"]
+          },
+          "public_url": {
+            "type": "string",
+            "format": "uri"
+          },
+          "file_size": {
+            "type": "integer",
+            "description": "Size in bytes"
+          },
+          "duration_seconds": {
+            "type": "integer",
+            "nullable": true
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ErrorResponse": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          },
+          "details": {
+            "type": "object"
+          }
+        }
+      },
+      "HealthStatus": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["healthy", "degraded", "unhealthy"]
+          },
+          "checks": {
+            "type": "object",
+            "properties": {
+              "database": {
+                "type": "boolean"
+              },
+              "redis": {
+                "type": "boolean"
+              },
+              "cloudflare_r2": {
+                "type": "boolean"
+              },
+              "notebooklm": {
+                "type": "boolean"
+              },
+              "slack": {
+                "type": "boolean"
+              }
+            }
+          },
+          "version": {
+            "type": "string"
+          },
+          "uptime_seconds": {
+            "type": "integer"
+          }
+        }
+      },
+      "Metrics": {
+        "type": "object",
+        "properties": {
+          "requests": {
+            "type": "object",
+            "properties": {
+              "total": {
+                "type": "integer"
+              },
+              "pending": {
+                "type": "integer"
+              },
+              "processing": {
+                "type": "integer"
+              },
+              "completed": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              }
+            }
+          },
+          "processing": {
+            "type": "object",
+            "properties": {
+              "average_duration_ms": {
+                "type": "number"
+              },
+              "p95_duration_ms": {
+                "type": "number"
+              },
+              "success_rate": {
+                "type": "number"
+              }
+            }
+          },
+          "storage": {
+            "type": "object",
+            "properties": {
+              "total_files": {
+                "type": "integer"
+              },
+              "total_size_bytes": {
+                "type": "integer"
+              }
+            }
+          },
+          "queue": {
+            "type": "object",
+            "properties": {
+              "waiting": {
+                "type": "integer"
+              },
+              "active": {
+                "type": "integer"
+              },
+              "completed": {
+                "type": "integer"
+              },
+              "failed": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

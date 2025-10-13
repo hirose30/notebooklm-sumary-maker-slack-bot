@@ -476,16 +476,24 @@ SELECT status, COUNT(*) as count FROM requests GROUP BY status;
 2. Socket Mode が有効になっているか確認
 3. トークンが正しく設定されているか確認:
    ```bash
-   # .env ファイルを確認
+   # .env ファイルを確認 (macOS/Linux)
    cat .env | grep SLACK_
+
+   # Windows PowerShell の場合
+   Get-Content .env | Select-String "SLACK_"
    ```
 
 #### NotebookLM 認証エラー
 
 ```bash
 # 認証情報を削除して再ログイン
+# macOS/Linux
 rm -rf ./user-data/
 PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
+
+# Windows PowerShell
+Remove-Item -Recurse -Force .\user-data\
+$env:PLAYWRIGHT_HEADLESS="false"; npx tsx scripts/test-notebooklm.ts
 ```
 
 #### R2 アップロードエラー
@@ -493,6 +501,18 @@ PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
 1. R2 トークンが有効か確認
 2. バケット名が正しいか確認
 3. R2 の権限設定を確認（Read & Write）
+
+#### Windows 固有の問題
+
+**詳細は [Windows セットアップガイド](./windows-setup.md) の [トラブルシューティング](./windows-setup.md#7-トラブルシューティング) を参照**:
+
+- パス長制限エラー (ENAMETOOLONG)
+- ファイアウォールブロック
+- 権限エラー (EPERM)
+- Playwright ダウンロードエラー
+
+**クロスプラットフォーム対応**:
+このプロジェクトは Windows/Mac/Linux で同じコードが動作します。パス処理は Node.js の `path` モジュールを使用しているため、OS 間の違いは自動的に処理されます。
 
 ### 6.6 セキュリティ推奨事項
 
@@ -535,9 +555,11 @@ npm run bot:start
 ## システム要件
 
 - **Node.js**: 20.x 以上
-- **OS**: macOS, Linux, Windows (WSL2)
+- **OS**: macOS, Linux, Windows 10/11 (ネイティブ対応)
 - **メモリ**: 最低 2GB (Playwright 用)
 - **ディスク**: 約 500MB (Chromium + 依存関係)
+
+**Windows ユーザーの方へ**: Windows 10/11 での詳細なセットアップ手順は [Windows セットアップガイド](./windows-setup.md) をご覧ください。
 
 ---
 

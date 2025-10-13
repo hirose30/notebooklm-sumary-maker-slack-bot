@@ -63,3 +63,32 @@ export function extractAndValidateUrl(text: string): string | null {
 
   return url;
 }
+
+/**
+ * Extract URL from thread context (mention text or parent text)
+ * Priority: mentionText > parentText
+ * @param mentionText - Text from the mention message
+ * @param parentText - Text from the parent thread message (null if no parent)
+ * @returns Valid URL or null
+ */
+export function extractUrlFromThread(mentionText: string, parentText: string | null): string | null {
+  // Priority 1: Check mention text first
+  const mentionUrl = extractAndValidateUrl(mentionText);
+  if (mentionUrl) {
+    logger.info('URL found in mention text', { url: mentionUrl });
+    return mentionUrl;
+  }
+
+  // Priority 2: Check parent text if available
+  if (parentText) {
+    const parentUrl = extractAndValidateUrl(parentText);
+    if (parentUrl) {
+      logger.info('URL found in parent thread', { url: parentUrl });
+      return parentUrl;
+    }
+  }
+
+  // No URL found in either location
+  logger.debug('No URL found in thread context');
+  return null;
+}

@@ -65,4 +65,4 @@ export class DatabaseService {
 
 // Export singleton instance
 export const database = new DatabaseService();
-export const db = database.getDb();
+export const db: Database.Database = database.getDb();

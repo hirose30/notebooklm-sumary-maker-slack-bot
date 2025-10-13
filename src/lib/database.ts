@@ -4,7 +4,7 @@
 
 import Database from 'better-sqlite3';
 import { logger } from './logger.js';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdirSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -16,6 +16,13 @@ export class DatabaseService {
 
   constructor(dbPath: string = './data/bot.db') {
     logger.info('Initializing database', { dbPath });
+
+    // Ensure the parent directory exists
+    const dbDir = dirname(dbPath);
+    if (!existsSync(dbDir)) {
+      logger.info('Creating database directory', { dbDir });
+      mkdirSync(dbDir, { recursive: true });
+    }
 
     this.db = new Database(dbPath, {
       verbose: (message) => logger.debug('SQLite:', message),

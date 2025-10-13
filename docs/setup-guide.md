@@ -61,6 +61,121 @@
 
 ---
 
+## アーキテクチャについて: Socket Mode とは？
+
+### なぜ公開エンドポイントが不要なのか
+
+このボットは **Slack Socket Mode** を使用しているため、**公開されたWebhook URLは一切不要**です。
+
+### Socket Mode vs 従来のHTTPモード
+
+#### 従来のHTTPモード（このプロジェトでは不使用）
+```
+Slack → インターネット → 公開Webhook URL → あなたのサーバー
+```
+- 公開されたHTTPSエンドポイントが必須
+- ngrok、Heroku、AWS等のホスティングが必要
+- ファイアウォール設定が複雑
+
+#### Socket Mode（このプロジェクトで採用）
+```
+あなたのサーバー → WebSocket接続 → Slack
+```
+- **WebSocketでSlackに接続**（ボット側から接続を開始）
+- **ローカル開発マシンで動作可能**
+- 公開エンドポイント不要
+- ファイアウォール越しでも動作
+
+### コード内での設定箇所
+
+[src/services/slack-bot.ts:35-40](src/services/slack-bot.ts#L35-L40) で Socket Mode を有効化:
+
+```typescript
+this.app = new App({
+  token: config.slackBotToken,        // Bot User OAuth Token
+  appToken: config.slackAppToken,     // App-Level Token（Socket Mode用）
+  socketMode: true,                    // ← これで WebSocket 接続が有効化
+  logLevel: LogLevel.INFO,
+});
+```
+
+### 実行環境の選択肢
+
+#### ✅ ローカル開発マシン（推奨）
+```bash
+npm run bot:start
+```
+- そのまま動作（公開不要）
+- 開発・デバッグが簡単
+- インターネット接続さえあればOK
+
+#### ✅ 自宅サーバー / ラズベリーパイ
+```bash
+pm2 start npm --name "notebooklm-bot" -- run bot:start
+```
+- 常時稼働が可能
+- 公開IP不要（Socket Modeなので）
+
+#### ✅ クラウドサーバー（EC2, VPS等）
+```bash
+systemctl start notebooklm-bot
+```
+- より安定した稼働
+- Socket Mode なので Webhook URL設定は不要
+
+#### ❌ サーバーレス（Lambda等）は不向き
+- Socket Mode は**常時接続**が必要
+- サーバーレスは短時間実行向け
+- NotebookLM処理も10-16分かかるため不適
+
+### Socket Mode の仕組み
+
+1. **起動時**: ボットが Slack に WebSocket 接続
+   ```
+   [Your Bot] --WebSocket--> [Slack API]
+   ```
+
+2. **イベント受信**: Slack がメンションを検知
+   ```
+   User mentions bot in Slack
+   ↓
+   Slack pushes event via WebSocket
+   ↓
+   Your bot receives event
+   ```
+
+3. **応答送信**: ボットが WebSocket 経由で返信
+   ```
+   [Your Bot] --Response via WebSocket--> [Slack API]
+   ```
+
+### 必要なトークンの違い
+
+| トークンタイプ | 用途 | 取得場所 |
+|--------------|------|---------|
+| **Bot User OAuth Token** (`xoxb-...`) | メッセージ送信、権限 | OAuth & Permissions |
+| **App-Level Token** (`xapp-...`) | Socket Mode接続 | Socket Mode設定 |
+| **Signing Secret** | リクエスト検証（保険） | Basic Information |
+
+### よくある質問
+
+**Q: ローカルPCの電源を切ったらどうなる？**
+A: ボットが停止します。常時稼働させたい場合は、サーバーまたは常時稼働PCで実行してください。
+
+**Q: ngrok や localtunnel は必要？**
+A: **不要です**。Socket Mode は WebSocket で接続するため、公開URLは一切不要です。
+
+**Q: ファイアウォール越しでも動作する？**
+A: はい。ボット側から **アウトバウンド** で WebSocket 接続するため、通常のファイアウォール環境で動作します。
+
+**Q: Heroku や Render.com にデプロイできる？**
+A: 可能ですが、Socket Mode なら**ローカルマシンで十分**です。クラウド費用は不要です。
+
+**Q: Request URL の設定はどこ？**
+A: Socket Mode では **Request URL の設定は不要** です。従来の HTTP モードでのみ必要な設定です。
+
+---
+
 ## 2. 環境変数の設定
 
 ### ステップ 2.1: .env ファイルを作成
@@ -97,15 +212,37 @@ SLACK_SIGNING_SECRET=your-signing-secret-here   # ステップ 1.6 でコピー�
 
 ### ステップ 3.2: R2 API トークンを作成
 
-1. **R2** 画面で **"Manage R2 API Tokens"** をクリック
+**重要**: **R2 Token（バケット単位のトークン）** を作成してください。Account API Tokenではありません。
+
+#### R2 Token vs Account API Token の違い
+
+| トークンタイプ | 推奨度 | 権限範囲 | セキュリティ |
+|--------------|-------|---------|------------|
+| **R2 Token** | ✅ 推奨 | バケット単位 | 最小権限、安全 |
+| Account API Token | ❌ 非推奨 | アカウント全体 | 権限過剰、危険 |
+
+このプロジェクトでは **R2 Token** を使用します。
+
+#### 作成手順
+
+1. **R2 ダッシュボード**で **"Manage R2 API Tokens"** をクリック
+   - ※ "My Profile" → "API Tokens" ではありません（それはAccount API Token）
 2. **"Create API Token"** をクリック
 3. トークン名を入力（例: `notebooklm-bot`）
 4. 権限を **"Object Read & Write"** に設定
-5. **"Create API Token"**
-6. 表示される以下の情報を **コピー**:
-   - Access Key ID
-   - Secret Access Key
-   - Account ID (ページ上部に表示)
+5. **適用するバケットを選択**（またはすべてのバケットを許可）
+6. **"Create API Token"**
+
+#### 表示される情報をコピー
+
+生成後、以下の情報が表示されます。**この画面は一度しか表示されません**ので、必ずコピーしてください：
+
+```
+Access Key ID: abc123def456ghi789jkl012mno345pq
+Secret Access Key: xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+```
+
+また、ページ上部または別の箇所に **Account ID** が表示されています（形式: `1a2b3c4d5e6f7g8h9i0j`）。
 
 ### ステップ 3.3: R2 の認証情報を設定
 
@@ -113,14 +250,16 @@ SLACK_SIGNING_SECRET=your-signing-secret-here   # ステップ 1.6 でコピー�
 
 ```bash
 # Cloudflare R2 Settings
-R2_ACCOUNT_ID=your-account-id-here
-R2_ACCESS_KEY_ID=your-access-key-id-here
-R2_SECRET_ACCESS_KEY=your-secret-access-key-here
-R2_BUCKET_NAME=notebooklm-media
-R2_PUBLIC_URL=https://your-bucket.r2.cloudflarestorage.com
+R2_ACCOUNT_ID=1a2b3c4d5e6f7g8h9i0j                    # Account ID（R2ダッシュボードに表示）
+R2_ACCESS_KEY_ID=abc123def456ghi789jkl012mno345pq      # Access Key ID
+R2_SECRET_ACCESS_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx  # Secret Access Key
+R2_BUCKET_NAME=notebooklm-media                        # 作成したバケット名
 ```
 
-**注意**: `R2_PUBLIC_URL` は暫定的にこの形式で OK（実際の署名付きURLが生成されます）
+**注意**:
+- `R2_PUBLIC_URL` は設定不要です（コード内で動的に生成されます）
+- 上記の値は例です。実際の値に置き換えてください
+- トークンは絶対に公開しないでください（`.gitignore` で `.env` は除外されています）
 
 ---
 

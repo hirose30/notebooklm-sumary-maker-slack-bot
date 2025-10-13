@@ -1,0 +1,43 @@
+{
+  "name": "notebooklm-sumary-maker-slack-bot",
+  "version": "0.2.0",
+  "description": "Slack bot that integrates with NotebookLM Pro to generate audio/video summaries",
+  "main": "dist/index.js",
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "test": "vitest",
+    "test:notebooklm": "tsx scripts/test-notebooklm.ts",
+    "test:slack": "tsx scripts/test-slack.ts",
+    "test:e2e": "tsx scripts/e2e-test.ts",
+    "bot:start": "tsx src/index.ts",
+    "notebooklm:login": "tsx scripts/manual-login.ts"
+  },
+  "keywords": [
+    "slack",
+    "notebooklm",
+    "automation",
+    "playwright"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.907.0",
+    "@aws-sdk/s3-request-presigner": "^3.907.0",
+    "@playwright/test": "^1.56.0",
+    "@slack/bolt": "^4.5.0",
+    "@slack/web-api": "^7.11.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.10.6",
+    "better-sqlite3": "^12.4.1",
+    "dotenv": "^17.2.3",
+    "playwright": "^1.56.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

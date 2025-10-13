@@ -1,0 +1,331 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "Slack Events API Contract",
+    "description": "Contract for handling Slack events and interactions for NotebookLM Pro bot",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://slack.com/api",
+      "description": "Slack API"
+    }
+  ],
+  "paths": {
+    "/events": {
+      "post": {
+        "summary": "Receive Slack Events",
+        "description": "Endpoint to receive events from Slack Events API",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/URLVerification"
+                  },
+                  {
+                    "$ref": "#/components/schemas/EventCallback"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Event processed successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "challenge": {
+                      "type": "string",
+                      "description": "Challenge string for URL verification"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/chat.postMessage": {
+      "post": {
+        "summary": "Post message to Slack",
+        "description": "Send a message to a Slack channel or thread",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "pattern": "^Bearer xoxb-.*"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PostMessageRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message posted successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PostMessageResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/conversations.history": {
+      "get": {
+        "summary": "Fetch thread messages",
+        "description": "Retrieve messages from a Slack thread",
+        "parameters": [
+          {
+            "name": "Authorization",
+            "in": "header",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "channel",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "ts",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "inclusive",
+            "in": "query",
+            "schema": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "integer",
+              "default": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Thread messages retrieved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationHistoryResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "URLVerification": {
+        "type": "object",
+        "required": ["type", "challenge", "token"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["url_verification"]
+          },
+          "challenge": {
+            "type": "string"
+          },
+          "token": {
+            "type": "string"
+          }
+        }
+      },
+      "EventCallback": {
+        "type": "object",
+        "required": ["type", "event", "event_id", "event_time"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["event_callback"]
+          },
+          "event": {
+            "$ref": "#/components/schemas/AppMentionEvent"
+          },
+          "event_id": {
+            "type": "string"
+          },
+          "event_time": {
+            "type": "integer"
+          },
+          "team_id": {
+            "type": "string"
+          }
+        }
+      },
+      "AppMentionEvent": {
+        "type": "object",
+        "required": ["type", "user", "text", "ts", "channel", "event_ts"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["app_mention"]
+          },
+          "user": {
+            "type": "string",
+            "description": "User ID who mentioned the bot"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text containing bot mention"
+          },
+          "ts": {
+            "type": "string",
+            "description": "Message timestamp"
+          },
+          "channel": {
+            "type": "string",
+            "description": "Channel ID"
+          },
+          "event_ts": {
+            "type": "string",
+            "description": "Event timestamp"
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "Thread timestamp if in thread"
+          }
+        }
+      },
+      "PostMessageRequest": {
+        "type": "object",
+        "required": ["channel", "text"],
+        "properties": {
+          "channel": {
+            "type": "string",
+            "description": "Channel ID to post to"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text"
+          },
+          "thread_ts": {
+            "type": "string",
+            "description": "Thread timestamp for replies"
+          },
+          "blocks": {
+            "type": "array",
+            "description": "Block Kit blocks for rich formatting",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      },
+      "PostMessageResponse": {
+        "type": "object",
+        "required": ["ok"],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "ts": {
+            "type": "string",
+            "description": "Timestamp of posted message"
+          },
+          "channel": {
+            "type": "string"
+          },
+          "error": {
+            "type": "string",
+            "description": "Error code if failed"
+          }
+        }
+      },
+      "ConversationHistoryResponse": {
+        "type": "object",
+        "required": ["ok", "messages"],
+        "properties": {
+          "ok": {
+            "type": "boolean"
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/SlackMessage"
+            }
+          },
+          "has_more": {
+            "type": "boolean"
+          },
+          "response_metadata": {
+            "type": "object",
+            "properties": {
+              "next_cursor": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      },
+      "SlackMessage": {
+        "type": "object",
+        "required": ["type", "user", "text", "ts"],
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["message"]
+          },
+          "user": {
+            "type": "string"
+          },
+          "text": {
+            "type": "string"
+          },
+          "ts": {
+            "type": "string"
+          },
+          "thread_ts": {
+            "type": "string"
+          },
+          "blocks": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    }
+  }
+}

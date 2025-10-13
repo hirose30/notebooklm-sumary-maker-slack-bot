@@ -1,429 +1,251 @@
-# Implementation Tasks: Slack NotebookLM Pro 統合ボット (軽量版)
+# Implementation Tasks: Slack NotebookLM Pro 統合ボット
 
-**Feature**: Slack NotebookLM Pro 統合ボット
+**Feature**: Slack NotebookLM Pro 統合ボット（改善版）
 **Branch**: `001-slack-url-notebooklm`
 **Stack**: Node.js 20+, TypeScript 5.x, @slack/bolt, Playwright, SQLite3, AWS SDK v3 (R2)
+**Status**: Phase 1-4 完了済み、Phase 6-8 実装待ち
 
 ## Summary
 
-Total tasks: 38 (reorganized for NotebookLM-first approach)
-- **Phase 1: Minimal Setup** - 5 tasks - Quick start
-- **Phase 2: NotebookLM Automation PoC** - 9 tasks - **最優先: Audio/Video生成を証明**
-- **Phase 3: Slack Integration** - 8 tasks - Botからの呼び出し
-- **Phase 4: Storage & E2E** - 10 tasks - R2とフル統合
-- **Phase 5: Progress Updates (P2)** - 6 tasks - オプション機能
+**既存実装**: Phase 1-4 完了（基本機能動作中）
+- Phase 1-2: NotebookLM自動化 ✅
+- Phase 3: Slack統合 ✅
+- Phase 4: R2ストレージ統合 ✅
 
-**実装戦略**: NotebookLMへのURL投げ込み→Audio/Video生成を最初に検証
-**MVP Scope**: Phase 1-2 (NotebookLM automation proof of concept)
+**今回の改善タスク**: Phase 6-8 (P0改善)
+- **Phase 6: エラー発生時の通知 (P0)** - 4 tasks
+- **Phase 7: スレッドベースURL処理 (P0)** - 5 tasks
+- **Phase 8: フォーマット済みリンク出力 (P0)** - 5 tasks
 
-## Phase 1: Minimal Project Setup
+Total new tasks: 14
 
-### Objective
-最小限のセットアップでPlaywright実験を開始できるようにする
+**MVP Scope**: Phase 6-8 (すべてP0優先度)
+**Future**: Phase 5 (進捗更新 - P2), 動画サムネイル調査 (P3)
+
+---
+
+## Phase 1-4: 基本実装 ✅ 完了
+
+**Status**: 実装済み・動作確認済み
+
+基本機能（音声・動画要約生成、Slack統合、R2ストレージ）は既に実装され、動作しています。
+詳細は以前のタスクリストを参照。
+
+---
+
+## Phase 6: User Story 2 - エラー発生時の通知 (Priority: P0) 🎯
+
+**Goal**: リクエスト処理中にエラーが発生した場合、ユーザーに通知し、次のリクエストの処理を継続する
+
+**Why P0**: エラーが発生してもユーザーに通知されず、後続のリクエストもブロックされる現状は、システムの信頼性に直結する重大な問題
+
+**Independent Test**: 無効なURLでボットをメンションし、エラーメッセージがスレッドに投稿され、次のリクエストが正常に処理されることを確認
+
+**Acceptance Criteria (from spec.md)**:
+- FR-022: エラー時に元のSlackスレッドに簡潔なエラーメッセージを投稿
+- FR-023: エラー後も次のリクエストの処理を継続（キューをブロックしない）
+- SC-009: エラー発生後、次のリクエストが30秒以内に処理開始
 
 ### Tasks
 
-**T001** - Initialize Node.js project with TypeScript [Setup]
-- File: `package.json`, `tsconfig.json`
-- Create new Node.js project with TypeScript configuration
-- Install: typescript, @types/node, tsx
+- [X] **T101** - [US2] request-processor.ts: エラーハンドリング改善 ✅
+- [X] **T102** - [US2] slack-bot.ts: エラーメッセージ投稿メソッド追加 ✅
+- [X] **T103** - [US2] slack-bot.ts: エラーコールバックの統合 ✅
+- [ ] **T104** - [US2] Integration test: エラー通知フロー (省略)
 
-**T002** - Install Playwright only [Setup]
-- File: `package.json`
-- Install: playwright, @playwright/test
-- Run: npx playwright install chromium
-
-**T003** - Create minimal project structure [Setup] [P]
-- Files: `src/`, `tests/`, `user-data/`, `.env`
-- Add .gitignore for user-data/, .env
-- Create basic directory structure
-
-**T004** - Setup basic logging [Setup] [P]
-- File: `src/lib/logger.ts`
-- Simple console logger with timestamps
-- Can upgrade to winston later
-
-**T005** - Create environment config [Setup] [P]
-- File: `src/lib/config.ts`, `.env.example`
-- Only NotebookLM-related vars for now
-- PLAYWRIGHT_HEADLESS, NOTEBOOKLM_EMAIL
+**Checkpoint**: エラー発生時のユーザー通知と継続処理が動作
 
 ---
-**Checkpoint**: Ready to start Playwright automation experiments
 
-## Phase 2: NotebookLM Automation PoC
+## Phase 7: User Story 3 - スレッドベースURL処理 (Priority: P0) 🎯
 
-### Objective
-**最優先**: URLをNotebookLMに投げ込んでAudio/Videoが生成できることを検証
+**Goal**: ボットメンション時にURLがない場合、親スレッドのメッセージからURLを抽出して処理
+
+**Why P0**: 実際のSlack利用では、URLを含む投稿に対して別のメッセージで「要約して」とメンションするのが自然な使い方
+
+**Independent Test**: URLを含む親投稿を作成し、返信でボットをメンション（URLなし）して、親投稿のURLが処理されることを確認
+
+**Acceptance Criteria (from spec.md)**:
+- FR-024: ボットメンション時にURLがない場合、親スレッドからURLを抽出
+- FR-025: ボットメンション時にURLがある場合、そのURLを優先処理
+- FR-026: 親スレッドにもURLがない場合、エラーメッセージを返信
+- SC-010: 親スレッドからのURL抽出が95%の精度で成功
 
 ### Tasks
 
-**T006** - Setup Playwright browser with persistent context [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts`
-- Initialize chromium.launchPersistentContext
-- Configure user-data directory for auth persistence
-- Set headless mode from config
+- [X] **T201** - [P] [US3] url-extractor.ts: スレッド親投稿からURL抽出機能追加 ✅
+- [X] **T202** - [US3] slack-bot.ts: app_mention イベントで親スレッドを取得 ✅
+- [X] **T203** - [US3] slack-bot.ts: URLが見つからない場合のエラーハンドリング ✅
+- [X] **T204** - [P] [US3] Unit test: url-extractor.ts の新機能テスト ✅
+- [ ] **T205** - [US3] Integration test: スレッドベースURL処理フロー (省略)
 
-**T007** - Implement manual login helper script [NotebookLM-PoC]
-- File: `scripts/manual-login.ts`
-- Open browser to notebooklm.google.com
-- Wait for user to login manually
-- Save session to user-data/
-- Script exits after successful login
-
-**T008** - Create notebook creation automation [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts` (part 2)
-- Navigate to NotebookLM (using saved auth)
-- Click "新しいノートブック" button
-- Wait for notebook page load
-
-**T009** - Implement URL source addition [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts` (part 3)
-- Find and fill source input field
-- Submit URL as source
-- Wait for processing completion indicators
-
-**T010** - Implement Audio Overview generation [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts` (part 4)
-- Click Audio Overview button
-- Setup network response interceptor
-- Capture download URL from network traffic
-- Handle 15-minute timeout
-
-**T011** - Implement Video Overview generation [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts` (part 5)
-- Click Video Overview button
-- Intercept video download URL
-- Handle generation timeout
-
-**T012** - Create standalone test script [NotebookLM-PoC]
-- File: `scripts/test-notebooklm.ts`
-- Take URL from command line args
-- Run full automation flow
-- Output audio/video URLs to console
-- This proves the core automation works!
-
-**T013** - Add error handling and retries [NotebookLM-PoC]
-- File: `src/services/notebooklm-automation.ts` (enhancement)
-- Timeout handling for long operations
-- Retry logic for network failures
-- Screenshot on errors
-
-**T014** - Document NotebookLM automation findings [NotebookLM-PoC] [P]
-- File: `docs/notebooklm-automation.md`
-- Document UI element selectors found
-- Note timing observations
-- Record error cases encountered
+**Checkpoint**: スレッドベースのURL処理が動作
 
 ---
-**Checkpoint**: ✅ NotebookLM automation proven - Can generate Audio/Video from URL!
 
-## Phase 3: Slack Integration
+## Phase 8: User Story 4 - フォーマット済みリンク出力 (Priority: P0) 🎯
 
-### Objective
-NotebookLM自動化が動いたので、次はSlackと接続する
+**Goal**: 生成された音声・動画要約のリンクを、読みやすいフォーマット（絵文字付きテキストリンク）でSlackに投稿
+
+**Why P0**: 現在の長い署名付きURLは可読性が低く、Slackスレッドを乱雑にする。ユーザーエクスペリエンスの基本的な改善
+
+**Independent Test**: 処理完了後のSlack投稿を確認し、URLがフォーマット済みリンク（`<URL|表示テキスト>`形式）で表示されることを確認
+
+**Acceptance Criteria (from spec.md)**:
+- FR-027: 音声リンクを「🎵 音声要約」形式で投稿
+- FR-028: 動画リンクを「🎬 動画要約」形式で投稿
+- FR-029: 各リンクにファイルサイズ情報を併記
+- SC-011: フォーマット済みリンクが100%正しく表示される
 
 ### Tasks
 
-**T015** - Install Slack dependencies [Slack]
-- File: `package.json`
-- Install: @slack/bolt, @slack/web-api
-- Install dotenv if not already installed
+- [X] **T301** - [US4] slack-bot.ts: 完了メッセージのフォーマット改善 ✅
+- [X] **T302** - [P] [US4] format-utils.ts: ファイルサイズフォーマット関数作成 ✅
+- [X] **T303** - [US4] simple-queue.ts: メディアファイルサイズカラムを確認 ✅ (既存実装済み)
+- [X] **T304** - [US4] request-processor.ts: ファイルサイズをDBに保存 ✅ (既存実装済み)
+- [ ] **T305** - [US4] Integration test: フォーマット済みリンク出力 (省略)
 
-**T016** - Setup Slack app configuration [Slack]
-- File: `src/lib/config.ts` (enhancement)
-- Add SLACK_BOT_TOKEN, SLACK_APP_TOKEN
-- Add Slack-related environment variables
-
-**T017** - Implement Slack bot initialization [Slack]
-- File: `src/services/slack-bot.ts`
-- Initialize Slack App with Socket Mode
-- Setup event listeners for app_mention events
-- Add connection error handling
-
-**T018** - Create URL extraction service [Slack] [P]
-- File: `src/services/url-extractor.ts`
-- Extract URLs from Slack message text
-- Validate URL format
-- Return first valid URL found
-
-**T019** - Implement basic Slack event handler [Slack]
-- File: `src/services/slack-bot.ts` (enhancement)
-- Handle app_mention events
-- Extract URL from message
-- Send acknowledgment reply
-
-**T020** - Create manual Slack integration test [Slack]
-- File: `scripts/test-slack.ts`
-- Connect to Slack workspace
-- Listen for mentions
-- Log events to console
-- Verify bot responds to mentions
-
-**T021** - Add simple message formatting [Slack] [P]
-- File: `src/services/slack-bot.ts` (enhancement)
-- Format bot replies with blocks
-- Add emoji and formatting
-- Create error message templates
-
-**T022** - Implement thread reply functionality [Slack]
-- File: `src/services/slack-bot.ts` (enhancement)
-- Reply to correct thread using thread_ts
-- Maintain conversation context
-- Handle DMs vs channels
+**Checkpoint**: フォーマット済みリンクが正しく表示される
 
 ---
-**Checkpoint**: ✅ Slack bot responds to mentions and extracts URLs
 
-## Phase 4: Storage & End-to-End Integration
+## Phase 9: Documentation & Polish
 
-### Objective
-R2ストレージ追加とSlack→NotebookLM→R2→Slackの全体フロー完成
+**Purpose**: ドキュメント更新と最終確認
 
-### Tasks
+**T401** - [P] Update README.md with new features
+- File: `README.md`
+- Add: 新機能（エラー通知、スレッドURL処理、フォーマット済みリンク）の説明
+- Update: 使用例のスクリーンショットまたは説明
 
-**T023** - Install storage dependencies [Storage]
-- File: `package.json`
-- Install: @aws-sdk/client-s3
-- Install: sqlite3, @types/better-sqlite3
+**T402** - [P] Update docs/setup-guide.md if needed
+- File: `docs/setup-guide.md`
+- Review: 新機能に関する注意事項が必要か確認
+- Add: 必要に応じてトラブルシューティングセクションを更新
 
-**T024** - Setup Cloudflare R2 client [Storage]
-- File: `src/services/cloudflare-storage.ts`
-- Initialize S3 client with R2 endpoint
-- Configure authentication from environment
-- Add bucket configuration
+**T403** - E2E test: Full flow with all improvements
+- Create: 完全なE2Eテストシナリオ
+- Test sequence:
+  1. エラーケース（無効URL） → エラー通知
+  2. スレッドURL処理（親投稿URL） → 正常処理
+  3. フォーマット済みリンク → 正しく表示
+- Verify: すべてのP0改善が正しく動作
 
-**T025** - Implement media file download from URLs [Storage]
-- File: `src/services/cloudflare-storage.ts` (part 2)
-- Download audio/video from NotebookLM URLs
-- Stream to memory or temp file
-- Handle large file downloads
+**T404** - Code review and cleanup
+- Review: すべての変更箇所のコードレビュー
+- Check: エラーメッセージがユーザーフレンドリーか
+- Verify: ログが適切に出力されているか
+- Clean: 不要なコメントやデバッグコードを削除
 
-**T026** - Implement R2 upload with public URLs [Storage]
-- File: `src/services/cloudflare-storage.ts` (part 3)
-- Upload media to R2 bucket
-- Generate public URLs with 7-day expiration
-- Return shareable links
-
-**T027** - Create SQLite database and schema [Storage]
-- Files: `src/lib/database.ts`, `src/db/migrations/001_initial.sql`
-- Setup SQLite connection with better-sqlite3
-- Create requests and media tables
-- Add indexes for performance
-
-**T028** - Implement simple queue service [Storage]
-- File: `src/services/simple-queue.ts`
-- SQLite-based queue (pending/processing/completed)
-- Add job, get next, update status methods
-- Serial processing (one at a time)
-
-**T029** - Create request processor orchestrator [Integration]
-- File: `src/services/request-processor.ts`
-- Coordinate: Queue → NotebookLM → R2 → Slack
-- Handle end-to-end error recovery
-- Update database status at each step
-
-**T030** - Integrate all services in Slack bot [Integration]
-- File: `src/services/slack-bot.ts` (major enhancement)
-- On mention: extract URL → add to queue
-- Process queue: run NotebookLM automation
-- Upload to R2, reply with links
-- Error handling and user notifications
-
-**T031** - Create end-to-end test script [Integration]
-- File: `scripts/e2e-test.ts`
-- Simulate full flow with test URL
-- Verify: Queue → NotebookLM → R2 → Output
-- Log timing and results
-
-**T032** - Add CLI for bot management [Integration] [P]
-- File: `src/cli/bot-manager.ts`
-- Commands: start, stop, status, queue
-- Add manual-login command
-- Add test-url command
+**Final Checkpoint**: すべてのP0改善が実装・テスト済み、ドキュメント更新完了
 
 ---
-**Checkpoint**: ✅ Complete end-to-end flow working!
 
-## Phase 5: Progress Updates (P2) - Optional Enhancement
+## Implementation Strategy
 
-### Objective
-ユーザー体験向上：処理中の進捗をリアルタイムで通知
+### Execution Order
 
-### Tasks
+**Recommended sequence** (すべて同じファイルを修正するため、順次実行推奨):
 
-**T033** - Add progress tracking to queue [Progress]
-- File: `src/services/simple-queue.ts` (enhancement)
-- Add progress percentage field
-- Track processing milestones
-- Store current step information
+1. Phase 6 (US2 - エラー通知) → 基盤となるエラーハンドリング改善
+2. Phase 7 (US3 - スレッドURL) → URL抽出ロジック改善
+3. Phase 8 (US4 - リンクフォーマット) → 出力形式改善
+4. Phase 9 (ドキュメント) → 最終確認
 
-**T034** - Implement progress notification service [Progress] [P]
-- File: `src/services/progress-notifier.ts`
-- Create interval-based progress checker (30s)
-- Format progress messages with emoji
-- Calculate time estimates
+### Parallel Execution Opportunities
 
-**T035** - Integrate progress updates with Slack [Progress]
-- File: `src/services/slack-bot.ts` (enhancement)
-- Send initial acknowledgment message
-- Post progress updates to thread every 30s
-- Update final message with completion status
+**Within Phase 6**: すべて順次（slack-bot.ts, request-processor.ts を修正）
 
-**T036** - Add progress hooks to NotebookLM automation [Progress]
-- File: `src/services/notebooklm-automation.ts` (enhancement)
-- Report progress: "ソース追加中", "Audio生成中", "Video生成中"
-- Update queue status at each step
-- Handle timeout notifications
+**Within Phase 7**:
+- T201 (url-extractor.ts) と T204 (テスト) は並列可能 [P]
+- T202, T203 (slack-bot.ts) は順次実行
 
-**T037** - Create progress update tests [Progress] [P]
-- File: `tests/unit/progress-notifier.test.ts`
-- Test interval timing
-- Verify message formatting
-- Test estimate calculations
+**Within Phase 8**:
+- T302 (format-utils.ts) と T301 (slack-bot.ts) は並列可能 [P]
+- T303, T304 (DB関連) は順次実行
 
-**T038** - Add progress to health endpoint [Progress] [P]
-- File: `src/services/slack-bot.ts` (enhancement)
-- Include current progress in health response
-- Add processing duration metrics
-- Track average processing times
+**Within Phase 9**:
+- T401, T402 (ドキュメント) は並列可能 [P]
+
+### Testing Strategy
+
+- Unit tests first: url-extractor, format-utils
+- Integration tests after: 各フェーズ完了後に実行
+- E2E test last: すべての改善が統合された後
 
 ---
-**Checkpoint**: ✅ Progress updates enhance user experience
 
-## Dependencies
+## Dependencies Between Phases
 
-### New Implementation Flow (NotebookLM-First)
-```mermaid
-graph TD
-    P1[Phase 1: Minimal Setup] --> P2[Phase 2: NotebookLM PoC]
-    P2 --> P3[Phase 3: Slack Integration]
-    P3 --> P4[Phase 4: Storage & E2E]
-    P4 --> P5[Phase 5: Progress Updates]
+```
+Phase 1-4 (基本実装) ✅ 完了済み
+    ↓
+Phase 6 (エラー通知) → 独立
+Phase 7 (スレッドURL) → 独立
+Phase 8 (リンクフォーマット) → 独立
+    ↓
+Phase 9 (ドキュメント) → すべての Phase 6-8 完了後
 
-    style P2 fill:#ff9,stroke:#333,stroke-width:4px
-    style P4 fill:#9f9,stroke:#333,stroke-width:2px
+⚠️ 注意: Phase 6-8 は論理的には独立しているが、同じファイル（slack-bot.ts）を
+修正するため、上記の推奨順序で実装すること
 ```
 
-### Critical Path (新しい順序)
-1. **Phase 1** (T001-T005): 最小限のセットアップ - T003-T005並列化可能
-2. **Phase 2** (T006-T014): NotebookLM自動化PoC - **最優先で検証**
-3. **Phase 3** (T015-T022): Slack統合 - T018, T021並列化可能
-4. **Phase 4** (T023-T032): ストレージと全体統合 - T024-T026並列化可能
-5. **Phase 5** (T033-T038): 進捗通知（オプション） - T034, T037, T038並列化可能
+---
 
-## Parallel Execution Examples
+## Task Summary
 
-### Phase 1: Quick Start
-```bash
-npm init -y
-npm install typescript @types/node tsx playwright
-npx playwright install chromium
+**New Tasks (Phase 6-8)**: 14 tasks
+- Phase 6 (US2 - エラー通知): 4 tasks
+- Phase 7 (US3 - スレッドURL): 5 tasks
+- Phase 8 (US4 - リンクフォーマット): 5 tasks
+- Phase 9 (Polish): 4 tasks (ドキュメント含む)
 
-# Parallel setup
-npm run setup:dirs &     # T003
-npm run setup:logger &   # T004
-npm run setup:config &   # T005
-```
+**Parallel Opportunities**: 5 tasks marked with [P]
 
-### Phase 2: NotebookLM PoC Testing
-```bash
-# Run manual login first (one time)
-npm run notebooklm:login
+**Estimated Completion**:
+- Phase 6: 2-3 hours (エラーハンドリング改善)
+- Phase 7: 2-4 hours (URL抽出ロジック)
+- Phase 8: 2-3 hours (出力フォーマット)
+- Phase 9: 1-2 hours (ドキュメント)
+- **Total**: 約7-12時間
 
-# Then test automation
-npm run test:notebooklm https://example.com/article
+---
 
-# Expected output:
-# ✅ Audio URL: https://notebooklm.google.com/notebook/xxx/audio
-# ✅ Video URL: https://notebooklm.google.com/notebook/xxx/video
-```
+## Next Steps
 
-### Phase 3: Slack Testing
-```bash
-# After Phase 2 works
-npm install @slack/bolt
-npm run slack:test
+**Option 1**: Proceed with `/speckit.implement` to execute tasks automatically
+- Recommended for following Speckit workflow
+- Tasks will be executed in order with automatic checkpoints
 
-# In Slack: @bot https://example.com/article
-# Expected: Bot acknowledges and extracts URL
-```
+**Option 2**: Manual implementation
+- Follow task order (T101 → T404)
+- Test each User Story independently after phase completion
+- Verify all acceptance criteria from spec.md
 
-### Phase 4: Full Integration
-```bash
-# All services together
-npm install @aws-sdk/client-s3 better-sqlite3
-npm run bot:start
+**Option 3**: Incremental delivery
+- Implement Phase 6 first (most critical)
+- Deploy and validate
+- Then implement Phase 7-8
 
-# In Slack: @bot https://example.com/article
-# Expected: Full flow → Audio/Video links in R2
-```
+---
 
-## Implementation Strategy (Updated)
+## Success Criteria Checklist
 
-### 🎯 Week 1: NotebookLM Automation PoC
-**Goal**: URLからAudio/Video生成できることを証明
-- Phase 1: Setup (Day 1)
-- Phase 2: NotebookLM PoC (Day 2-5)
-  - T012のスタンドアロンスクリプトが動けば成功！
-  - `npm run test:notebooklm <URL>` → Audio/Video URLs出力
+After implementation, verify these from spec.md:
 
-### 🔗 Week 2: Slack Integration
-**Goal**: Slackから呼び出せるようにする
-- Phase 3: Slack Integration (Day 1-3)
-  - Slack botがメンションに反応
-  - URLを抽出してNotebookLM実行
-  - 結果をSlackに返信（まだR2なし）
+### User Story 2 (エラー通知)
+- [ ] FR-022: エラー時にSlackスレッドにメッセージ投稿
+- [ ] FR-023: エラー後も次のリクエストを処理
+- [ ] SC-009: エラー後30秒以内に次のリクエスト開始
 
-### 💾 Week 3: Storage & E2E
-**Goal**: 全体フローを完成させる
-- Phase 4: Storage & Integration (Day 1-5)
-  - R2へのアップロード
-  - SQLiteでキュー管理
-  - 完全な自動化フロー
+### User Story 3 (スレッドURL)
+- [ ] FR-024: 親スレッドからURL抽出
+- [ ] FR-025: メンション内URLを優先
+- [ ] FR-026: URLがない場合はエラー
+- [ ] SC-010: URL抽出95%成功率
 
-### ✨ Week 4: Enhancement (Optional)
-**Goal**: UX改善
-- Phase 5: Progress Updates
-  - 進捗通知
-  - エラーハンドリング改善
-  - ドキュメント整備
-
-## Validation Checklist
-
-### ✅ Phase 2 Success Criteria (最重要)
-- [ ] Playwrightでログイン状態を保存できる
-- [ ] NotebookLMで新規ノートブックを作成できる
-- [ ] URLをソースとして追加できる
-- [ ] Audio Overviewボタンをクリックできる
-- [ ] Audio生成完了を検知できる
-- [ ] AudioダウンロードURLを取得できる
-- [ ] Video Overviewボタンをクリックできる
-- [ ] VideoダウンロードURLを取得できる
-- [ ] **`test-notebooklm.ts`スクリプトが動作する**
-
-### ✅ Phase 3 Success Criteria
-- [ ] Slackメンションを受信できる
-- [ ] メッセージからURLを抽出できる
-- [ ] NotebookLM自動化を呼び出せる
-- [ ] 結果をSlackスレッドに返信できる
-
-### ✅ Phase 4 Success Criteria
-- [ ] Audio/VideoをR2にアップロードできる
-- [ ] 公開URLを7日間有効期限で生成できる
-- [ ] SQLiteキューで処理管理できる
-- [ ] Slack→NotebookLM→R2→Slackの全フロー動作
-
-### ✅ Phase 5 Success Criteria (Optional)
-- [ ] 30秒ごとに進捗通知
-- [ ] 処理ステップの可視化
-- [ ] 推定完了時間の表示
-
-## Notes
-
-- **Phase 2が最重要**: これが動かないと全体が成り立たない
-- Tasks marked [P]: 並列実行可能
-- NotebookLM自動化は実験的要素が強い - 早期検証が必須
-- UIセレクタが変わる可能性あり - ドキュメント化重要
-- Authentication persistence is key - user-data/ directory must persist
-- Serial processing (一度に1リクエスト) でNotebookLM制限を回避
+### User Story 4 (リンクフォーマット)
+- [ ] FR-027: 「🎵 音声要約」形式
+- [ ] FR-028: 「🎬 動画要約」形式
+- [ ] FR-029: ファイルサイズ併記
+- [ ] SC-011: リンク100%正しく表示

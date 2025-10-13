@@ -6,7 +6,8 @@
 import { App, LogLevel } from '@slack/bolt';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
-import { extractAndValidateUrl } from './url-extractor.js';
+import { formatFileSize } from '../lib/format-utils.js';
+import { extractUrlFromThread } from './url-extractor.js';
 import { SimpleQueue } from './simple-queue.js';
 import { RequestProcessor } from './request-processor.js';
 
@@ -19,10 +20,17 @@ export class SlackBot {
   constructor() {
     this.queue = new SimpleQueue();
 
-    // Initialize processor with completion callback
-    this.processor = new RequestProcessor(async (job) => {
-      await this.postCompletionResults(job.slackChannel, job.slackThreadTs, job.id);
-    });
+    // Initialize processor with completion and error callbacks
+    this.processor = new RequestProcessor(
+      // onJobComplete callback
+      async (job) => {
+        await this.postCompletionResults(job.slackChannel, job.slackThreadTs, job.id);
+      },
+      // onJobError callback
+      async (job, error) => {
+        await this.postErrorMessage(job.slackChannel, job.slackThreadTs, job.id);
+      }
+    );
 
     // Initialize Slack App with Socket Mode
     this.app = new App({
@@ -46,30 +54,52 @@ export class SlackBot {
           user: event.user,
           channel: event.channel,
           text: event.text,
+          thread_ts: event.thread_ts,
         });
 
-        // Extract URL from message
-        const url = extractAndValidateUrl(event.text);
+        // Fetch parent thread message if this is a threaded reply
+        let parentText: string | null = null;
+        if (event.thread_ts) {
+          try {
+            const parent = await client.conversations.history({
+              channel: event.channel,
+              latest: event.thread_ts,
+              inclusive: true,
+              limit: 1,
+            });
+            parentText = parent.messages?.[0]?.text || null;
+            logger.debug('Parent thread fetched', { parentText: parentText?.substring(0, 100) });
+          } catch (parentError) {
+            logger.warn('Failed to fetch parent thread', { error: parentError });
+            // Continue processing - not fatal
+          }
+        }
+
+        // Extract URL from thread context (mention text or parent text)
+        const url = extractUrlFromThread(event.text, parentText);
 
         if (!url) {
           await this.replyToThread(
             client,
             event.channel,
             event.ts,
-            '❌ URLが見つかりませんでした。URLを含めてメンションしてください。\n例: `@bot https://example.com/article`'
+            '❌ URLが見つかりません。スレッド内にURLを含めてください。\n例: `@bot https://example.com/article`'
           );
           return;
         }
 
         // Add to queue
-        const jobId = this.queue.addJob(url, event.channel, event.ts, event.user);
+        // Use thread_ts if available (threaded reply), otherwise use ts (top-level message)
+        const threadTs = event.thread_ts || event.ts;
+        const userId = event.user || 'unknown';
+        const jobId = this.queue.addJob(url, event.channel, threadTs, userId);
 
         // Send acknowledgment
         await this.replyToThread(
           client,
           event.channel,
           event.ts,
-          `✅ URLを受け付けました: ${url}\n\n🔄 処理キューに追加しました (Job ID: ${jobId})\n処理が完了したらこのスレッドに結果を投稿します。`
+          `✅ リクエストを受け付けました\n\n🔄 処理キューに追加しました (Job ID: ${jobId})\n処理が完了したらこのスレッドに結果を投稿します。`
         );
 
         logger.info('Job added to queue', { jobId, url });
@@ -153,6 +183,26 @@ export class SlackBot {
   }
 
   /**
+   * Post error message to Slack when job fails
+   */
+  private async postErrorMessage(
+    channel: string,
+    threadTs: string,
+    jobId: number
+  ): Promise<void> {
+    try {
+      const message = `❌ 処理中にエラーが発生しました（Job ID: ${jobId}）\n\nURLが正しいか、再度お試しください。`;
+
+      await this.replyToThread(this.app.client, channel, threadTs, message);
+
+      logger.info('Posted error message', { jobId, channel });
+    } catch (error) {
+      logger.error('Failed to post error message', { error, jobId });
+      // Don't throw - we want to continue processing
+    }
+  }
+
+  /**
    * Post completion results to Slack
    */
   async postCompletionResults(
@@ -173,16 +223,16 @@ export class SlackBot {
       let message = '✅ 処理が完了しました！\n\n';
 
       if (audioMedia) {
-        message += `🎵 音声解説: ${audioMedia.r2PublicUrl}\n`;
-        message += `   サイズ: ${(audioMedia.fileSize / 1024 / 1024).toFixed(2)} MB\n\n`;
+        const audioSize = formatFileSize(audioMedia.fileSize);
+        message += `<${audioMedia.r2PublicUrl}|🎵 音声要約> (${audioSize})\n`;
       }
 
       if (videoMedia) {
-        message += `🎬 動画解説: ${videoMedia.r2PublicUrl}\n`;
-        message += `   サイズ: ${(videoMedia.fileSize / 1024 / 1024).toFixed(2)} MB\n\n`;
+        const videoSize = formatFileSize(videoMedia.fileSize);
+        message += `<${videoMedia.r2PublicUrl}|🎬 動画要約> (${videoSize})\n`;
       }
 
-      message += `⏰ リンクは7日間有効です`;
+      message += `\n⏰ リンクは7日間有効です`;
 
       await this.replyToThread(this.app.client, channel, threadTs, message);
 

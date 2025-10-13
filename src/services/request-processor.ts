@@ -14,12 +14,17 @@ export class RequestProcessor {
   private notebooklm: NotebookLMAutomation;
   private isProcessing: boolean = false;
   private onJobComplete?: (job: QueueJob) => Promise<void>;
+  private onJobError?: (job: QueueJob, error: Error) => Promise<void>;
 
-  constructor(onJobComplete?: (job: QueueJob) => Promise<void>) {
+  constructor(
+    onJobComplete?: (job: QueueJob) => Promise<void>,
+    onJobError?: (job: QueueJob, error: Error) => Promise<void>
+  ) {
     this.queue = new SimpleQueue();
     this.storage = new CloudflareStorage();
     this.notebooklm = new NotebookLMAutomation();
     this.onJobComplete = onJobComplete;
+    this.onJobError = onJobError;
   }
 
   /**
@@ -147,11 +152,24 @@ export class RequestProcessor {
     } catch (error) {
       logger.error('Failed to process request', { error, id: job.id });
 
+      const errorObj = error instanceof Error ? error : new Error('Unknown error');
+
       this.queue.updateJobStatus(job.id, 'failed', {
-        errorMessage: error instanceof Error ? error.message : 'Unknown error',
+        errorMessage: errorObj.message,
       });
 
-      throw error;
+      // Call error callback to notify Slack
+      if (this.onJobError) {
+        try {
+          await this.onJobError(job, errorObj);
+        } catch (callbackError) {
+          logger.error('Error callback failed', { callbackError, id: job.id });
+          // Don't throw - we want to continue processing other jobs
+        }
+      }
+
+      // Don't throw error - we want to continue processing next job
+      logger.info('Continuing to next job after error', { id: job.id });
     } finally {
       // Cleanup
       await this.notebooklm.cleanup();

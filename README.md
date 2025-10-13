@@ -25,6 +25,11 @@ npm install
 npx playwright install chromium
 ```
 
+**重要 - クロスプラットフォーム環境の注意**:
+- Dropbox/OneDrive/Git などで複数のOSで同じプロジェクトを使用する場合、**各OS環境で個別に `npm install` を実行してください**
+- Mac/Linux/Windows 間で `node_modules` を共有すると、ネイティブモジュール（better-sqlite3）のエラーが発生します
+- エラーが発生した場合: `npm rebuild better-sqlite3` または `rm -rf node_modules && npm install` を実行
+
 ### 2. 環境設定
 
 ```bash
@@ -44,7 +49,8 @@ cp .env.example .env
 
 ```bash
 # ブラウザが開くので、Google アカウントでログイン
-PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
+# ログイン後、ターミナルで Enter キーを押して認証情報を保存
+npx tsx scripts/test-login-only.ts
 ```
 
 ### 4. ボット起動

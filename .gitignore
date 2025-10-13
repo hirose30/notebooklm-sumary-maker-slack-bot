@@ -11,7 +11,7 @@ dist/
 .env.*.local
 
 # User data and authentication
-user-data/
+user-data*/
 
 # Logs
 logs/
@@ -42,3 +42,5 @@ coverage/
 # Temporary files
 tmp/
 temp/
+
+.dropboxignore

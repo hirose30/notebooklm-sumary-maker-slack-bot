@@ -270,29 +270,106 @@ R2_BUCKET_NAME=notebooklm-media                        # 作成したバケッ�
 NotebookLMへのログイン情報を保存します:
 
 ```bash
-# ブラウザが開き、Google アカウントでログイン
+# まず Playwright Chromium をインストール
 npx playwright install chromium
-npm run notebooklm:login
 
-# ※ このスクリプトはまだ存在しないので、以下のコマンドで代用:
-PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
+# ログイン専用スクリプトを実行（推奨）
+# macOS/Linux
+npx tsx scripts/test-login-only.ts
+
+# Windows PowerShell
+npx tsx scripts/test-login-only.ts
 ```
 
 **手順**:
-1. ブラウザが起動する
+1. Chromium ブラウザが自動で起動
 2. NotebookLM (https://notebooklm.google.com) に自動遷移
-3. **手動で Google アカウントにログイン**
-4. ログイン完了後、ブラウザを閉じる
+3. **ブラウザウィンドウで手動ログイン**:
+   - Google アカウントでログイン
+   - 2段階認証がある場合は認証コードを入力
+   - NotebookLM のホーム画面が表示されるまで待つ
+4. **ターミナルに戻って Enter キーを押す**
 5. 認証情報が `./user-data/` に保存される
+
+**このスクリプトの利点**:
+- ✅ タイムアウトなし（Enter キーを押すまで待機）
+- ✅ 2段階認証の入力時間を十分確保
+- ✅ ログイン完了を自分のタイミングで確定
+- ✅ マルチプロファイル対応（`USER_DATA_DIR` 環境変数で切り替え可能）
+
+**実行例**:
+```bash
+$ npx tsx scripts/test-login-only.ts
+=== NotebookLM Login Test ===
+
+This script will:
+1. Launch Chromium browser
+2. Navigate to NotebookLM
+3. Wait for you to manually login
+4. Press Enter after login to save authentication
+
+Launching browser...
+✓ Browser launched
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+🔐 Please login manually in the browser:
+
+1. Check the browser window
+2. Login with your Google account
+3. Complete 2-factor authentication if required
+4. Wait for NotebookLM home page to load
+5. Verify you see "ノートブックを新規作成" button
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Press Enter after login is complete... [Enter を押す]
+
+✓ Login successful!
+```
 
 ### ステップ 4.2: 認証情報の確認
 
 ```bash
+# macOS/Linux
 ls -la ./user-data/
+
+# Windows PowerShell
+dir .\user-data\
+
 # Default/ フォルダなどが作成されていれば OK
 ```
 
 **重要**: `./user-data/` フォルダは削除しないでください（認証情報が含まれています）
+
+### ステップ 4.3: マルチプロファイル設定（オプション）
+
+開発環境と本番環境で異なる Google アカウントを使い分けたい場合、`USER_DATA_DIR` 環境変数で複数のプロファイルを管理できます：
+
+**環境ごとの設定例**:
+```bash
+# .env.development (開発環境用)
+USER_DATA_DIR=./user-data-dev
+NOTEBOOKLM_EMAIL=dev@example.com
+
+# .env.production (本番環境用)
+USER_DATA_DIR=./user-data-prod
+NOTEBOOKLM_EMAIL=prod@example.com
+```
+
+**プロファイルごとにログイン**:
+```bash
+# 開発環境でログイン
+USER_DATA_DIR=./user-data-dev PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
+
+# 本番環境でログイン
+USER_DATA_DIR=./user-data-prod PLAYWRIGHT_HEADLESS=false npx tsx scripts/test-notebooklm.ts
+```
+
+**メリット**:
+- テストデータと本番データの分離
+- NotebookLM のクォータを分離
+- 誤って本番データを操作するリスクを回避
 
 ---
 
@@ -303,6 +380,35 @@ ls -la ./user-data/
 ```bash
 npm install
 ```
+
+**重要 - クロスプラットフォーム環境の注意**:
+
+このプロジェクトは `better-sqlite3` というネイティブモジュールを使用しています。ネイティブモジュールは各 OS 用にコンパイルされたバイナリを含むため、**異なる OS 間でコピーすると動作しません**。
+
+**症状**: 別の OS からコピーした場合、以下のようなエラーが発生することがあります：
+```
+Error: better_sqlite3.node is not a valid Win32 application  (Mac → Windows)
+Error: ... Exec format error  (Windows → Mac/Linux)
+```
+
+**解決方法**:
+```bash
+# node_modules を削除して再インストール
+# macOS/Linux
+rm -rf node_modules
+npm install
+
+# Windows PowerShell
+Remove-Item -Recurse -Force .\node_modules\
+npm install
+```
+
+または、better-sqlite3 のみを再ビルド：
+```bash
+npm rebuild better-sqlite3
+```
+
+**ベストプラクティス**: Dropbox/OneDrive などで複数の OS 間で同期している場合、各 OS 環境で個別に `npm install` を実行してください。
 
 ### ステップ 5.2: データベースの初期化
 
@@ -502,17 +608,34 @@ $env:PLAYWRIGHT_HEADLESS="false"; npx tsx scripts/test-notebooklm.ts
 2. バケット名が正しいか確認
 3. R2 の権限設定を確認（Read & Write）
 
-#### Windows 固有の問題
+#### ネイティブモジュールエラー（クロスプラットフォーム）
 
-**詳細は [Windows セットアップガイド](./windows-setup.md) の [トラブルシューティング](./windows-setup.md#7-トラブルシューティング) を参照**:
+**エラー例**:
+```
+Error: better_sqlite3.node is not a valid Win32 application
+Error: ... Exec format error
+```
 
-- パス長制限エラー (ENAMETOOLONG)
-- ファイアウォールブロック
-- 権限エラー (EPERM)
-- Playwright ダウンロードエラー
+**原因**: 別の OS でインストールされた `node_modules` を使用している
 
-**クロスプラットフォーム対応**:
-このプロジェクトは Windows/Mac/Linux で同じコードが動作します。パス処理は Node.js の `path` モジュールを使用しているため、OS 間の違いは自動的に処理されます。
+**解決方法**: [ステップ 5.1](#ステップ-51-依存関係のインストール) の「クロスプラットフォーム環境の注意」を参照
+
+#### Node.js バージョンエラー
+
+**エラー例**:
+```
+Error: The module was compiled against a different Node.js version
+```
+
+**解決方法**:
+```bash
+# Node.js のバージョンを確認
+node --version  # 20.x 以上であることを確認
+
+# 依存関係を再インストール
+rm -rf node_modules package-lock.json
+npm install
+```
 
 ### 6.6 セキュリティ推奨事項
 
@@ -555,11 +678,11 @@ npm run bot:start
 ## システム要件
 
 - **Node.js**: 20.x 以上
-- **OS**: macOS, Linux, Windows 10/11 (ネイティブ対応)
+- **OS**: macOS, Linux, Windows 10/11
 - **メモリ**: 最低 2GB (Playwright 用)
 - **ディスク**: 約 500MB (Chromium + 依存関係)
 
-**Windows ユーザーの方へ**: Windows 10/11 での詳細なセットアップ手順は [Windows セットアップガイド](./windows-setup.md) をご覧ください。
+**クロスプラットフォーム対応**: このプロジェクトは Windows/Mac/Linux で動作します。パス処理は Node.js の `path` モジュールを使用しているため、OS 間の違いは自動的に処理されます。
 
 ---
 

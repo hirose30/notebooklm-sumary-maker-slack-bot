@@ -44,3 +44,5 @@ tmp/
 temp/
 
 .dropboxignore
+# Headless debugging files
+headless-debug.*

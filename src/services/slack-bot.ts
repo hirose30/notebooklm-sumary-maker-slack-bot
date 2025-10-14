@@ -94,13 +94,22 @@ export class SlackBot {
         const userId = event.user || 'unknown';
         const jobId = this.queue.addJob(url, event.channel, threadTs, userId);
 
-        // Send acknowledgment
-        await this.replyToThread(
-          client,
-          event.channel,
-          event.ts,
-          `✅ リクエストを受け付けました\n\n🔄 処理キューに追加しました (Job ID: ${jobId})\n処理が完了したらこのスレッドに結果を投稿します。`
-        );
+        // Send acknowledgment and capture timestamp
+        try {
+          const ackResponse = await client.chat.postMessage({
+            channel: event.channel,
+            thread_ts: event.ts,
+            text: `✅ リクエストを受け付けました\n\n🔄 処理キューに追加しました (Job ID: ${jobId})\n処理が完了したらこのスレッドに結果を投稿します。`
+          });
+
+          // Store timestamp for later deletion
+          this.queue.updateAckMessageTs(jobId, ackResponse.ts!);
+          logger.info('Posted and stored acknowledgment', { jobId, ackTs: ackResponse.ts });
+        } catch (ackError) {
+          logger.error('Failed to post acknowledgment', { error: ackError, jobId });
+          // Continue processing - acknowledgment is nice-to-have
+          // ack_message_ts will remain NULL, deletion will be skipped
+        }
 
         logger.info('Job added to queue', { jobId, url });
       } catch (error) {
@@ -191,11 +200,37 @@ export class SlackBot {
     jobId: number
   ): Promise<void> {
     try {
+      // Step 1: Delete acknowledgment (same as completion)
+      try {
+        const request = this.queue.getRequest(jobId);
+
+        if (request?.ack_message_ts) {
+          await this.app.client.chat.delete({
+            channel,
+            ts: request.ack_message_ts
+          });
+          logger.info('Deleted acknowledgment before error message', { jobId });
+        }
+      } catch (deleteError: any) {
+        logger.warn('Failed to delete acknowledgment on error', {
+          jobId,
+          error: deleteError,
+          errorCode: deleteError?.data?.error
+        });
+        // Continue - deletion failure is non-critical
+      }
+
+      // Step 2: Post error with broadcast
       const message = `❌ 処理中にエラーが発生しました（Job ID: ${jobId}）\n\nURLが正しいか、再度お試しください。`;
 
-      await this.replyToThread(this.app.client, channel, threadTs, message);
+      await this.app.client.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        reply_broadcast: true,  // Errors also broadcast to channel
+        text: message
+      });
 
-      logger.info('Posted error message', { jobId, channel });
+      logger.info('Posted error message with broadcast', { jobId, channel });
     } catch (error) {
       logger.error('Failed to post error message', { error, jobId });
       // Don't throw - we want to continue processing
@@ -211,6 +246,35 @@ export class SlackBot {
     jobId: number
   ): Promise<void> {
     try {
+      // Step 1: Delete acknowledgment message (if exists)
+      try {
+        const request = this.queue.getRequest(jobId);
+
+        if (request?.ack_message_ts) {
+          await this.app.client.chat.delete({
+            channel,
+            ts: request.ack_message_ts
+          });
+          logger.info('Deleted acknowledgment message', { jobId, ackTs: request.ack_message_ts });
+        } else {
+          logger.debug('No acknowledgment to delete', { jobId });
+        }
+      } catch (deleteError: any) {
+        // Map known errors to appropriate log levels
+        const errorCode = deleteError?.data?.error;
+
+        if (errorCode === 'message_not_found') {
+          logger.info('Acknowledgment already deleted (manual user deletion)', { jobId });
+        } else if (errorCode === 'cant_delete_message') {
+          logger.warn('Cannot delete message (permission issue)', { jobId, error: deleteError });
+        } else {
+          logger.warn('Failed to delete acknowledgment message', { jobId, error: deleteError });
+        }
+
+        // CRITICAL: Don't throw - deletion failure must not prevent completion (FR-006)
+      }
+
+      // Step 2: Build and post completion message
       const media = this.queue.getMediaForRequest(jobId);
 
       if (media.length === 0) {
@@ -234,9 +298,15 @@ export class SlackBot {
 
       message += `\n⏰ リンクは7日間有効です`;
 
-      await this.replyToThread(this.app.client, channel, threadTs, message);
+      // CRITICAL: Use reply_broadcast for channel visibility (FR-005)
+      await this.app.client.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        reply_broadcast: true,  // Always true - mandatory requirement
+        text: message
+      });
 
-      logger.info('Posted completion results', { jobId, channel });
+      logger.info('Posted completion results with broadcast', { jobId, channel });
     } catch (error) {
       logger.error('Failed to post completion results', { error, jobId });
       throw error;

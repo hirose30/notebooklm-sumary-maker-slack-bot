@@ -207,6 +207,39 @@ export class SimpleQueue {
   }
 
   /**
+   * Store acknowledgment message timestamp for later deletion
+   */
+  updateAckMessageTs(requestId: number, messageTs: string): void {
+    // Validate Slack timestamp format (e.g., "1234567890.123456")
+    if (!/^\d+\.\d+$/.test(messageTs)) {
+      logger.error('Invalid Slack timestamp format', { messageTs, requestId });
+      throw new Error(`Invalid Slack timestamp format: ${messageTs}`);
+    }
+
+    const stmt = db.prepare('UPDATE requests SET ack_message_ts = ? WHERE id = ?');
+    const result = stmt.run(messageTs, requestId);
+
+    if (result.changes === 0) {
+      logger.error('Request not found when updating ack_message_ts', { requestId });
+      throw new Error(`Request not found: ${requestId}`);
+    }
+
+    logger.info('Stored acknowledgment message timestamp', { requestId, messageTs });
+  }
+
+  /**
+   * Get request by ID including acknowledgment message timestamp
+   */
+  getRequest(requestId: number): any | undefined {
+    const stmt = db.prepare('SELECT * FROM requests WHERE id = ?');
+    const request = stmt.get(requestId) as any;
+
+    logger.debug('Retrieved request', { requestId, hasAckTs: !!request?.ack_message_ts });
+
+    return request;
+  }
+
+  /**
    * Get queue statistics
    */
   getStats(): {

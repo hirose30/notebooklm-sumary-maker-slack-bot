@@ -8,6 +8,8 @@ Auto-generated from all feature plans. Last updated: 2025-10-09
 - SQLite for request tracking and simple queue, Cloudflare R2 for media files (001-slack-url-notebooklm)
 - Node.js 20+ / TypeScript 5.x + @slack/bolt (Slack Bot SDK) (003-url)
 - N/A（メッセージフォーマットのみの変更） (003-url)
+- TypeScript 5.3.3 + Node.js 20+ + @slack/bolt 4.5.0, better-sqlite3 12.4.1 (005-)
+- SQLite (requests table requires schema change: add ack_message_ts column) (005-)
 
 ## Project Structure
 ```
@@ -22,9 +24,9 @@ npm test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNO
 Node.js 20+ with TypeScript 5.x: Follow standard conventions
 
 ## Recent Changes
+- 005-: Added TypeScript 5.3.3 + Node.js 20+ + @slack/bolt 4.5.0, better-sqlite3 12.4.1
 - 003-url: Added Node.js 20+ / TypeScript 5.x + @slack/bolt (Slack Bot SDK)
 - 001-slack-url-notebooklm: Added Node.js 20+ with TypeScript 5.x + @slack/bolt, Playwright, AWS SDK v3 (for R2), SQLite3
-- 001-slack-url-notebooklm: Added Node.js 20+ with TypeScript 5.x + @slack/bolt, Playwright, AWS SDK v3 (for R2), BullMQ, PostgreSQL
 
 <!-- MANUAL ADDITIONS START -->
 <!-- MANUAL ADDITIONS END -->

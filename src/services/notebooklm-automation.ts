@@ -87,6 +87,11 @@ export class NotebookLMAutomation {
         ],
         viewport: { width: 1920, height: 1080 },
         locale: 'ja-JP',
+        // Additional options to avoid headless detection
+        userAgent: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        extraHTTPHeaders: {
+          'Accept-Language': 'ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7',
+        },
       });
 
       // Set default timeout to 15 minutes for long operations

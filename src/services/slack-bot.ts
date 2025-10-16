@@ -3,13 +3,17 @@
  * Handles Slack events and manages bot interactions
  */
 
-import { App, LogLevel } from '@slack/bolt';
+import { App, LogLevel, AuthorizeSourceData } from '@slack/bolt';
+import { WebClient } from '@slack/web-api';
 import { config } from '../lib/config.js';
-import { logger } from '../lib/logger.js';
+import { logger, workspaceLogger } from '../lib/logger.js';
 import { formatFileSize } from '../lib/format-utils.js';
 import { extractUrlFromThread } from './url-extractor.js';
 import { SimpleQueue } from './simple-queue.js';
 import { RequestProcessor } from './request-processor.js';
+import { db } from '../lib/database.js';
+import { workspaceContext, getWorkspaceContext } from './workspace-context.js';
+import type { SlackInstallationRow } from '../models/workspace.js';
 
 export class SlackBot {
   private app: App;
@@ -32,11 +36,45 @@ export class SlackBot {
       }
     );
 
-    // Initialize Slack App with Socket Mode
+    // Initialize Slack App with custom authorize function (env-based workspaces)
+    // Workspaces are loaded from environment variables and synced to DB at startup
     this.app = new App({
-      token: config.slackBotToken,
-      appToken: config.slackAppToken,
-      socketMode: true,
+      signingSecret: config.slackSigningSecret,
+      authorize: async (source) => {
+        // Fetch workspace installation from database
+        const teamId = source.teamId;
+
+        if (!teamId) {
+          throw new Error('No team ID in authorization source');
+        }
+
+        const installation = db.prepare<[string], SlackInstallationRow>(`
+          SELECT * FROM slack_installations
+          WHERE team_id = ? AND enterprise_id IS NULL
+        `).get(teamId);
+
+        if (!installation) {
+          throw new Error(`No installation found for team ${teamId}`);
+        }
+
+        logger.debug('Authorize: Found installation', {
+          teamId: installation.team_id,
+          teamName: installation.team_name,
+          hasBotToken: !!installation.bot_token,
+        });
+
+        // Return authorization result in format expected by Bolt SDK
+        // See: https://slack.dev/bolt-js/concepts#authorization
+        return {
+          botToken: installation.bot_token,
+          botId: installation.bot_id,
+          botUserId: installation.bot_user_id,
+          teamId: installation.team_id,
+          enterpriseId: installation.enterprise_id || undefined,
+        };
+      },
+      socketMode: true, // Socket Mode for development (no public endpoints needed)
+      appToken: process.env.SLACK_WS1_APP_TOKEN || config.slackAppToken, // Primary workspace app token for Socket Mode
       logLevel: LogLevel.INFO,
     });
 
@@ -48,14 +86,25 @@ export class SlackBot {
    */
   private setupEventHandlers(): void {
     // Handle app mentions
-    this.app.event('app_mention', async ({ event, client }) => {
-      try {
-        logger.info('Received app mention', {
-          user: event.user,
-          channel: event.channel,
-          text: event.text,
-          thread_ts: event.thread_ts,
-        });
+    this.app.event('app_mention', async ({ event, client, context }) => {
+      // Extract workspace context from Bolt context
+      const workspace = {
+        teamId: context.teamId!,
+        teamName: (context as any).teamName || 'Unknown',
+        botToken: context.botToken!,
+        botUserId: context.botUserId!,
+        enterpriseId: (context as any).enterpriseId || null,
+      };
+
+      // Run the handler within workspace context
+      await workspaceContext.run(workspace, async () => {
+        try {
+          workspaceLogger.info('Received app mention', {
+            user: event.user,
+            channel: event.channel,
+            text: event.text,
+            thread_ts: event.thread_ts,
+          });
 
         // Fetch parent thread message if this is a threaded reply
         let parentText: string | null = null;
@@ -68,9 +117,9 @@ export class SlackBot {
               limit: 1,
             });
             parentText = parent.messages?.[0]?.text || null;
-            logger.debug('Parent thread fetched', { parentText: parentText?.substring(0, 100) });
+            workspaceLogger.debug('Parent thread fetched', { parentText: parentText?.substring(0, 100) });
           } catch (parentError) {
-            logger.warn('Failed to fetch parent thread', { error: parentError });
+            workspaceLogger.warn('Failed to fetch parent thread', { error: parentError });
             // Continue processing - not fatal
           }
         }
@@ -92,7 +141,8 @@ export class SlackBot {
         // Use thread_ts if available (threaded reply), otherwise use ts (top-level message)
         const threadTs = event.thread_ts || event.ts;
         const userId = event.user || 'unknown';
-        const jobId = this.queue.addJob(url, event.channel, threadTs, userId);
+        const currentWorkspace = getWorkspaceContext();
+        const jobId = this.queue.addJob(url, event.channel, threadTs, userId, currentWorkspace.teamId);
 
         // Send acknowledgment and capture timestamp
         try {
@@ -104,28 +154,29 @@ export class SlackBot {
 
           // Store timestamp for later deletion
           this.queue.updateAckMessageTs(jobId, ackResponse.ts!);
-          logger.info('Posted and stored acknowledgment', { jobId, ackTs: ackResponse.ts });
+          workspaceLogger.info('Posted and stored acknowledgment', { jobId, ackTs: ackResponse.ts });
         } catch (ackError) {
-          logger.error('Failed to post acknowledgment', { error: ackError, jobId });
+          workspaceLogger.error('Failed to post acknowledgment', { error: ackError, jobId });
           // Continue processing - acknowledgment is nice-to-have
           // ack_message_ts will remain NULL, deletion will be skipped
         }
 
-        logger.info('Job added to queue', { jobId, url });
-      } catch (error) {
-        logger.error('Error handling app mention', { error });
+          workspaceLogger.info('Job added to queue', { jobId, url });
+        } catch (error) {
+          workspaceLogger.error('Error handling app mention', { error });
 
-        try {
-          await this.replyToThread(
-            client,
-            event.channel,
-            event.ts,
-            '❌ エラーが発生しました。後でもう一度お試しください。'
-          );
-        } catch (replyError) {
-          logger.error('Error sending error reply', { error: replyError });
+          try {
+            await this.replyToThread(
+              client,
+              event.channel,
+              event.ts,
+              '❌ エラーが発生しました。後でもう一度お試しください。'
+            );
+          } catch (replyError) {
+            workspaceLogger.error('Error sending error reply', { error: replyError });
+          }
         }
-      }
+      });
     });
 
     // Handle errors
@@ -148,6 +199,23 @@ export class SlackBot {
       thread_ts: threadTs,
       text,
     });
+  }
+
+  /**
+   * Get Slack WebClient for a specific workspace
+   * Uses workspace_id to fetch the correct bot token
+   */
+  private getClientForWorkspace(workspaceId: string): WebClient {
+    const installation = db.prepare<[string], SlackInstallationRow>(`
+      SELECT * FROM slack_installations
+      WHERE team_id = ? AND enterprise_id IS NULL
+    `).get(workspaceId);
+
+    if (!installation) {
+      throw new Error(`No installation found for workspace ${workspaceId}`);
+    }
+
+    return new WebClient(installation.bot_token);
   }
 
   /**
@@ -183,8 +251,9 @@ export class SlackBot {
       },
     });
 
+    // In OAuth mode, the client automatically uses the correct workspace token
+    // based on the current context. No need to pass token explicitly.
     await this.app.client.chat.postMessage({
-      token: config.slackBotToken,
       channel,
       thread_ts: threadTs,
       blocks,
@@ -200,12 +269,18 @@ export class SlackBot {
     jobId: number
   ): Promise<void> {
     try {
+      const request = this.queue.getRequest(jobId);
+      if (!request || !request.workspaceId) {
+        logger.error('Cannot post error message: no workspace_id', { jobId });
+        return;
+      }
+
+      const client = this.getClientForWorkspace(request.workspaceId);
+
       // Step 1: Delete acknowledgment (same as completion)
       try {
-        const request = this.queue.getRequest(jobId);
-
-        if (request?.ack_message_ts) {
-          await this.app.client.chat.delete({
+        if (request.ack_message_ts) {
+          await client.chat.delete({
             channel,
             ts: request.ack_message_ts
           });
@@ -223,7 +298,7 @@ export class SlackBot {
       // Step 2: Post error with broadcast
       const message = `❌ 処理中にエラーが発生しました（Job ID: ${jobId}）\n\nURLが正しいか、再度お試しください。`;
 
-      await this.app.client.chat.postMessage({
+      await client.chat.postMessage({
         channel,
         thread_ts: threadTs,
         reply_broadcast: true,  // Errors also broadcast to channel
@@ -246,12 +321,18 @@ export class SlackBot {
     jobId: number
   ): Promise<void> {
     try {
+      const request = this.queue.getRequest(jobId);
+      if (!request || !request.workspaceId) {
+        logger.error('Cannot post completion results: no workspace_id', { jobId });
+        throw new Error('No workspace_id for request');
+      }
+
+      const client = this.getClientForWorkspace(request.workspaceId);
+
       // Step 1: Delete acknowledgment message (if exists)
       try {
-        const request = this.queue.getRequest(jobId);
-
-        if (request?.ack_message_ts) {
-          await this.app.client.chat.delete({
+        if (request.ack_message_ts) {
+          await client.chat.delete({
             channel,
             ts: request.ack_message_ts
           });
@@ -299,7 +380,7 @@ export class SlackBot {
       message += `\n⏰ リンクは7日間有効です`;
 
       // CRITICAL: Use reply_broadcast for channel visibility (FR-005)
-      await this.app.client.chat.postMessage({
+      await client.chat.postMessage({
         channel,
         thread_ts: threadTs,
         reply_broadcast: true,  // Always true - mandatory requirement

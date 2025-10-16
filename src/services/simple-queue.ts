@@ -12,6 +12,7 @@ export interface QueueJob {
   slackChannel: string;
   slackThreadTs: string;
   slackUser: string;
+  workspaceId: string | null; // Associated workspace team ID
   status: 'pending' | 'processing' | 'completed' | 'failed';
   progress: number;
   currentStep?: string;
@@ -40,19 +41,21 @@ export class SimpleQueue {
     url: string,
     slackChannel: string,
     slackThreadTs: string,
-    slackUser: string
+    slackUser: string,
+    workspaceId: string | null = null
   ): number {
     const stmt = db.prepare(`
-      INSERT INTO requests (url, slack_channel, slack_thread_ts, slack_user, status)
-      VALUES (?, ?, ?, ?, 'pending')
+      INSERT INTO requests (url, slack_channel, slack_thread_ts, slack_user, workspace_id, status)
+      VALUES (?, ?, ?, ?, ?, 'pending')
     `);
 
-    const result = stmt.run(url, slackChannel, slackThreadTs, slackUser);
+    const result = stmt.run(url, slackChannel, slackThreadTs, slackUser, workspaceId);
 
     logger.info('Job added to queue', {
       id: result.lastInsertRowid,
       url,
       channel: slackChannel,
+      workspaceId,
     });
 
     return Number(result.lastInsertRowid);
@@ -230,13 +233,21 @@ export class SimpleQueue {
   /**
    * Get request by ID including acknowledgment message timestamp
    */
-  getRequest(requestId: number): any | undefined {
+  getRequest(requestId: number): (QueueJob & { ack_message_ts?: string }) | undefined {
     const stmt = db.prepare('SELECT * FROM requests WHERE id = ?');
-    const request = stmt.get(requestId) as any;
+    const row = stmt.get(requestId) as any;
 
-    logger.debug('Retrieved request', { requestId, hasAckTs: !!request?.ack_message_ts });
+    if (!row) {
+      return undefined;
+    }
 
-    return request;
+    logger.debug('Retrieved request', { requestId, hasAckTs: !!row.ack_message_ts });
+
+    // Map to QueueJob format and add ack_message_ts
+    return {
+      ...this.mapRowToJob(row),
+      ack_message_ts: row.ack_message_ts,
+    };
   }
 
   /**
@@ -277,6 +288,7 @@ export class SimpleQueue {
       slackChannel: row.slack_channel,
       slackThreadTs: row.slack_thread_ts,
       slackUser: row.slack_user,
+      workspaceId: row.workspace_id || null,
       status: row.status,
       progress: row.progress,
       currentStep: row.current_step,

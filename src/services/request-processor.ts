@@ -6,7 +6,9 @@
 import { NotebookLMAutomation } from './notebooklm-automation.js';
 import { CloudflareStorage } from './cloudflare-storage.js';
 import { SimpleQueue, QueueJob } from './simple-queue.js';
-import { logger } from '../lib/logger.js';
+import { logger, workspaceLogger } from '../lib/logger.js';
+import { workspaceContext } from './workspace-context.js';
+import { db } from '../lib/database.js';
 
 export class RequestProcessor {
   private queue: SimpleQueue;
@@ -31,9 +33,15 @@ export class RequestProcessor {
    * Process a single request end-to-end
    */
   async processRequest(job: QueueJob): Promise<void> {
-    logger.info('Processing request', { id: job.id, url: job.url });
+    // Load workspace context if available
+    const workspace = job.workspaceId ? await this.loadWorkspaceContext(job.workspaceId) : null;
 
-    try {
+    // Execute within workspace context if available
+    const processJob = async () => {
+      const jobLogger = workspace ? workspaceLogger : logger;
+      jobLogger.info('Processing request', { id: job.id, url: job.url });
+
+      try {
       // Initialize NotebookLM automation
       this.queue.updateJobStatus(job.id, 'processing', {
         progress: 10,
@@ -139,40 +147,79 @@ export class RequestProcessor {
         currentStep: 'Completed',
       });
 
-      logger.info('Request processed successfully', {
-        id: job.id,
-        audioSize: audioBuffer.length,
-        videoSize: videoBuffer.length,
-      });
+        jobLogger.info('Request processed successfully', {
+          id: job.id,
+          audioSize: audioBuffer.length,
+          videoSize: videoBuffer.length,
+        });
 
-      // Call completion callback (e.g., to notify Slack)
-      if (this.onJobComplete) {
-        await this.onJobComplete(job);
-      }
-    } catch (error) {
-      logger.error('Failed to process request', { error, id: job.id });
-
-      const errorObj = error instanceof Error ? error : new Error('Unknown error');
-
-      this.queue.updateJobStatus(job.id, 'failed', {
-        errorMessage: errorObj.message,
-      });
-
-      // Call error callback to notify Slack
-      if (this.onJobError) {
-        try {
-          await this.onJobError(job, errorObj);
-        } catch (callbackError) {
-          logger.error('Error callback failed', { callbackError, id: job.id });
-          // Don't throw - we want to continue processing other jobs
+        // Call completion callback (e.g., to notify Slack)
+        if (this.onJobComplete) {
+          await this.onJobComplete(job);
         }
+      } catch (error) {
+        jobLogger.error('Failed to process request', { error, id: job.id });
+
+        const errorObj = error instanceof Error ? error : new Error('Unknown error');
+
+        this.queue.updateJobStatus(job.id, 'failed', {
+          errorMessage: errorObj.message,
+        });
+
+        // Call error callback to notify Slack
+        if (this.onJobError) {
+          try {
+            await this.onJobError(job, errorObj);
+          } catch (callbackError) {
+            jobLogger.error('Error callback failed', { callbackError, id: job.id });
+            // Don't throw - we want to continue processing other jobs
+          }
+        }
+
+        // Don't throw error - we want to continue processing next job
+        jobLogger.info('Continuing to next job after error', { id: job.id });
+      } finally {
+        // Cleanup
+        await this.notebooklm.cleanup();
+      }
+    };
+
+    // Run with workspace context if available
+    if (workspace) {
+      await workspaceContext.run(workspace, processJob);
+    } else {
+      await processJob();
+    }
+  }
+
+  /**
+   * Load workspace context from database by workspaceId (teamId)
+   */
+  private async loadWorkspaceContext(workspaceId: string): Promise<any> {
+    try {
+      const stmt = db.prepare(`
+        SELECT team_id, team_name, bot_token, bot_user_id, enterprise_id
+        FROM slack_installations
+        WHERE team_id = ?
+      `);
+
+      const row = stmt.get(workspaceId) as any;
+
+      if (!row) {
+        logger.warn('Workspace not found for job', { workspaceId });
+        return null;
       }
 
-      // Don't throw error - we want to continue processing next job
-      logger.info('Continuing to next job after error', { id: job.id });
-    } finally {
-      // Cleanup
-      await this.notebooklm.cleanup();
+      return {
+        teamId: row.team_id,
+        teamName: row.team_name || 'Unknown',
+        botToken: row.bot_token,
+        botUserId: row.bot_user_id,
+        enterpriseId: row.enterprise_id || null,
+      };
+    } catch (error) {
+      logger.error('Failed to load workspace context', { error, workspaceId });
+      return null;
     }
   }
 

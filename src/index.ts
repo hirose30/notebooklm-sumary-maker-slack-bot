@@ -5,11 +5,17 @@
 import 'dotenv/config';
 import { SlackBot } from './services/slack-bot.js';
 import { logger } from './lib/logger.js';
+import { loadWorkspacesFromEnv } from './lib/workspace-loader.js';
 
 async function main() {
   logger.info('╔═══════════════════════════════════════╗');
   logger.info('║  NotebookLM Slack Bot Starting...   ║');
   logger.info('╚═══════════════════════════════════════╝');
+  logger.info('');
+
+  // Load workspace configurations from environment variables
+  logger.info('Loading workspace configurations...');
+  const { workspaces, primaryAppToken } = await loadWorkspacesFromEnv();
   logger.info('');
 
   const bot = new SlackBot();

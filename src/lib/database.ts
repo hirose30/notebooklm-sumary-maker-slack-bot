@@ -60,7 +60,8 @@ export class DatabaseService {
       // Define all migrations
       const migrations = [
         { version: 1, file: '001_initial.sql' },
-        { version: 2, file: '002_add_ack_message_ts.sql' }
+        { version: 2, file: '002_add_ack_message_ts.sql' },
+        { version: 3, file: '003_multi_workspace.sql' }
       ];
 
       // Apply pending migrations
@@ -82,8 +83,66 @@ export class DatabaseService {
       logger.info('Migrations completed successfully', {
         currentVersion: migrations[migrations.length - 1].version
       });
+
+      // Validate database integrity after migrations
+      this.validateDatabase();
     } catch (error) {
       logger.error('Migration failed', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Validate database integrity for workspace support (T012)
+   * Checks for duplicate team_id and orphaned requests
+   */
+  private validateDatabase(): void {
+    try {
+      // Check for duplicate team_id in slack_installations (where enterprise_id IS NULL)
+      const duplicates = this.db
+        .prepare(`
+          SELECT team_id, COUNT(*) as count
+          FROM slack_installations
+          WHERE enterprise_id IS NULL
+          GROUP BY team_id
+          HAVING count > 1
+        `)
+        .all() as Array<{ team_id: string; count: number }>;
+
+      if (duplicates.length > 0) {
+        const teamIds = duplicates.map((d) => d.team_id).join(', ');
+        logger.error('Database validation failed: Duplicate team_id found', {
+          duplicates,
+        });
+        throw new Error(
+          `Database integrity error: Duplicate team_id found for standard workspaces: ${teamIds}. ` +
+          'Each workspace must have exactly one installation record.'
+        );
+      }
+
+      // Check for orphaned requests (workspace_id not in slack_installations)
+      const orphanedRequests = this.db
+        .prepare(`
+          SELECT COUNT(*) as count
+          FROM requests
+          WHERE workspace_id NOT IN (SELECT id FROM slack_installations)
+        `)
+        .get() as { count: number };
+
+      if (orphanedRequests.count > 0) {
+        logger.warn('Orphaned requests found', {
+          count: orphanedRequests.count,
+          message: 'Some requests reference non-existent workspaces. This may occur after workspace uninstallation.',
+        });
+      }
+
+      logger.info('Database validation completed successfully');
+    } catch (error) {
+      // Re-throw if it's our custom error
+      if (error instanceof Error && error.message.includes('Database integrity error')) {
+        throw error;
+      }
+      logger.error('Database validation failed', { error });
       throw error;
     }
   }
@@ -104,6 +163,7 @@ export class DatabaseService {
   }
 }
 
-// Export singleton instance
-export const database = new DatabaseService();
+// Export singleton instance with optional DB_PATH from environment
+const dbPath = process.env.DB_PATH || './data/bot.db';
+export const database = new DatabaseService(dbPath);
 export const db: Database.Database = database.getDb();

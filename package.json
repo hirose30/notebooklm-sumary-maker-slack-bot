@@ -13,6 +13,8 @@
     "test:slack": "tsx scripts/test-slack.ts",
     "test:e2e": "tsx scripts/e2e-test.ts",
     "bot:start": "tsx src/index.ts",
+    "bot:start:ws1": "./scripts/start-ws1.sh",
+    "bot:start:ws2": "./scripts/start-ws2.sh",
     "notebooklm:login": "tsx scripts/manual-login.ts"
   },
   "keywords": [
@@ -39,5 +41,8 @@
   },
   "engines": {
     "node": ">=20.0.0"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^10.0.0"
   }
 }

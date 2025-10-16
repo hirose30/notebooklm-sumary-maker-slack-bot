@@ -6,7 +6,9 @@ set -a  # automatically export all variables
 source .env.ws2
 set +a
 
-# Unset any WS1 variables that might conflict
-# (Note: In .env.ws2, we use WS1 variable names but with WS2 values)
+# Map WS2 tokens to WS1 variable names (for backward compatibility with slack-bot.ts)
+# The code expects SLACK_WS1_APP_TOKEN, so we alias WS2 tokens to WS1
+export SLACK_WS1_BOT_TOKEN="$SLACK_WS2_BOT_TOKEN"
+export SLACK_WS1_APP_TOKEN="$SLACK_WS2_APP_TOKEN"
 
 exec npx tsx src/index.ts

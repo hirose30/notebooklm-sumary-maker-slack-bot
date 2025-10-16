@@ -15,7 +15,11 @@
     "bot:start": "tsx src/index.ts",
     "bot:start:ws1": "./scripts/start-ws1.sh",
     "bot:start:ws2": "./scripts/start-ws2.sh",
-    "notebooklm:login": "tsx scripts/manual-login.ts"
+    "bot:start:ws1:win": "powershell -ExecutionPolicy Bypass -File scripts/start-ws1.ps1",
+    "bot:start:ws2:win": "powershell -ExecutionPolicy Bypass -File scripts/start-ws2.ps1",
+    "notebooklm:login": "tsx scripts/manual-login.ts",
+    "notebooklm:login:ws1:win": "powershell -ExecutionPolicy Bypass -File scripts/login-ws1.ps1",
+    "notebooklm:login:ws2:win": "powershell -ExecutionPolicy Bypass -File scripts/login-ws2.ps1"
   },
   "keywords": [
     "slack",

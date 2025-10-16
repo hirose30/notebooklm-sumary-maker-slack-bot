@@ -35,3 +35,49 @@ class Logger {
 }
 
 export const logger = new Logger();
+
+/**
+ * Workspace-aware logger wrapper
+ * Automatically includes workspace context (teamId, teamName) in log metadata
+ * Uses AsyncLocalStorage to get current workspace context
+ */
+import { workspaceContext } from '../services/workspace-context.js';
+
+export const workspaceLogger = {
+  debug(message: string, meta?: Record<string, any>): void {
+    const workspace = workspaceContext.getStore();
+    logger.debug(message, {
+      ...meta,
+      teamId: workspace?.teamId,
+      teamName: workspace?.teamName,
+    });
+  },
+
+  info(message: string, meta?: Record<string, any>): void {
+    const workspace = workspaceContext.getStore();
+    logger.info(message, {
+      ...meta,
+      teamId: workspace?.teamId,
+      teamName: workspace?.teamName,
+    });
+  },
+
+  warn(message: string, meta?: Record<string, any>): void {
+    const workspace = workspaceContext.getStore();
+    logger.warn(message, {
+      ...meta,
+      teamId: workspace?.teamId,
+      teamName: workspace?.teamName,
+    });
+  },
+
+  error(message: string, meta?: Record<string, any>): void {
+    const workspace = workspaceContext.getStore();
+    logger.error(message, {
+      ...meta,
+      teamId: workspace?.teamId,
+      teamName: workspace?.teamName,
+      // Never log botToken (security requirement)
+    });
+  },
+};

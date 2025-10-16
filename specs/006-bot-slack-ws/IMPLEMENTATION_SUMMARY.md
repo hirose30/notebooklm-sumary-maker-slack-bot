@@ -503,11 +503,20 @@ npm run bot:start:ws1
 
 ### Scripts & Configuration
 
+**Unix/Linux/macOS Scripts**:
 - ✅ [scripts/start-ws1.sh](../../scripts/start-ws1.sh) - **NEW**: .env.ws1 loader with exclusive env isolation
-- ✅ [scripts/start-ws2.sh](../../scripts/start-ws2.sh) - **NEW**: .env.ws2 loader with exclusive env isolation
+- ✅ [scripts/start-ws2.sh](../../scripts/start-ws2.sh) - **NEW**: .env.ws2 loader with WS2→WS1 env mapping
+
+**Windows PowerShell Scripts**:
+- ✅ [scripts/start-ws1.ps1](../../scripts/start-ws1.ps1) - **NEW**: Windows workspace 1 startup script
+- ✅ [scripts/start-ws2.ps1](../../scripts/start-ws2.ps1) - **NEW**: Windows workspace 2 startup with env mapping
+- ✅ [scripts/login-ws1.ps1](../../scripts/login-ws1.ps1) - **NEW**: Windows NotebookLM login for WS1
+- ✅ [scripts/login-ws2.ps1](../../scripts/login-ws2.ps1) - **NEW**: Windows NotebookLM login for WS2
+
+**Configuration Files**:
 - ✅ [.env.ws1](../../.env.ws1) - **NEW**: Workspace 1 configuration
 - ✅ [.env.ws2](../../.env.ws2) - **NEW**: Workspace 2 configuration
-- ✅ [package.json](../../package.json) - Added bot:start:ws1 and bot:start:ws2 scripts
+- ✅ [package.json](../../package.json) - Added Unix and Windows npm commands
 
 ### Documentation
 
@@ -534,10 +543,43 @@ npm run bot:start:ws1
 2. **Database consolidation**: Revisit shared database with proper locking if processes need data visibility
 3. **OAuth support**: Add optional OAuth mode for users who can expose public endpoints
 
+## Windows PowerShell Support
+
+### Implementation
+
+Added cross-platform support for Windows 10/11 using PowerShell scripts (`.ps1` files):
+
+**Features**:
+- ✅ Robust `.env` file parsing (handles comments, empty lines, quotes)
+- ✅ Environment variable mapping: `SLACK_WS2_*` → `SLACK_WS1_*` for backward compatibility
+- ✅ Debug output for troubleshooting
+- ✅ Separate login and startup scripts per workspace
+
+**Commands**:
+```powershell
+# NotebookLM authentication
+npm run notebooklm:login:ws1:win
+npm run notebooklm:login:ws2:win
+
+# Bot startup
+npm run bot:start:ws1:win
+npm run bot:start:ws2:win
+```
+
+**Technical Details**:
+- PowerShell's `$env:` variables are set per-process and inherited by child processes
+- Explicit mapping ensures compatibility with code expecting `SLACK_WS1_APP_TOKEN`
+- Regex pattern: `^([^=]+)=(.*)$` for KEY=VALUE parsing
+- Quote stripping: `$value -replace '^["'']|["'']$', ''`
+
+**Setup**: See [MULTI_WORKSPACE_SETUP.md](./MULTI_WORKSPACE_SETUP.md) for Windows-specific instructions.
+
 ## Conclusion
 
 Feature 006 US1 (Multi-Workspace Bot Operation) has been successfully implemented using a separate process architecture instead of the originally planned OAuth-based single process approach. The pivot was necessary due to Socket Mode's limitation (1 APP_TOKEN per process) and the requirement to avoid public HTTPS endpoints.
 
 **Key Achievement**: The bot can now serve multiple Slack workspaces simultaneously with complete isolation, minimal configuration burden (2 env vars per workspace), and zero impact from workspace-specific errors.
 
-**Implementation Status**: Production-ready for US1. US2 (request history) and US3 (management UI) remain unimplemented but are not critical for basic multi-workspace operation.
+**Platform Support**: ✅ Linux, ✅ macOS, ✅ Windows 10/11 (PowerShell)
+
+**Implementation Status**: Production-ready for US1 on all platforms. US2 (request history) and US3 (management UI) remain unimplemented but are not critical for basic multi-workspace operation.

@@ -61,8 +61,12 @@ src/
     └── 003_multi_workspace.sql # [IMPLEMENTED] slack_installations table + workspace_id column
 
 scripts/
-├── start-ws1.sh               # [IMPLEMENTED] .env.ws1 loader with exclusive env isolation
-└── start-ws2.sh               # [IMPLEMENTED] .env.ws2 loader with exclusive env isolation
+├── start-ws1.sh               # [IMPLEMENTED] .env.ws1 loader (Unix/Linux/macOS)
+├── start-ws2.sh               # [IMPLEMENTED] .env.ws2 loader with WS2→WS1 mapping (Unix/Linux/macOS)
+├── start-ws1.ps1              # [IMPLEMENTED] .env.ws1 loader (Windows)
+├── start-ws2.ps1              # [IMPLEMENTED] .env.ws2 loader with WS2→WS1 mapping (Windows)
+├── login-ws1.ps1              # [IMPLEMENTED] NotebookLM login for WS1 (Windows)
+└── login-ws2.ps1              # [IMPLEMENTED] NotebookLM login for WS2 (Windows)
 
 .env.ws1, .env.ws2             # [IMPLEMENTED] Per-workspace configuration files
 ```
@@ -133,3 +137,4 @@ Key implementation areas (preview):
 3. **WebClient Token Issue**: `this.app.client` used wrong token - fixed with `getClientForWorkspace()` method
 4. **Env Var Isolation**: dotenv-cli loaded both `.env` and `.env.ws1` - fixed with shell scripts using `source` and `unset`
 5. **Browser Session Separation**: Each workspace needs separate USER_DATA_DIR for independent NotebookLM login sessions
+6. **Windows PowerShell Support**: Added cross-platform startup scripts (`.ps1` files) with robust `.env` parsing, environment variable mapping (`SLACK_WS2_*` → `SLACK_WS1_*`), and Windows-specific npm commands for both NotebookLM login and bot startup

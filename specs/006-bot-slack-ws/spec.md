@@ -140,6 +140,8 @@ During implementation, the original OAuth-based approach (InstallationStore patt
   - **実装**: `.env.ws1`、`.env.ws2`等の個別ファイルで管理
 - Socket Modeを使用し、公開HTTPSエンドポイントは不要
   - **実装**: OAuth不使用、env-based configurationで対応
+- クロスプラットフォーム対応（Unix/Linux/macOS、Windows 10/11）
+  - **実装**: Bashスクリプト（`.sh`）とPowerShellスクリプト（`.ps1`）を提供
 
 ## Dependencies *(optional)*
 
@@ -149,3 +151,4 @@ During implementation, the original OAuth-based approach (InstallationStore patt
 - SQLite データベース（`requests`テーブルにworkspace_idカラムを追加するスキーマ変更が必要）
 - 設定ファイル読み込み機能（新規実装が必要）
 - 各ワークスペースに個別にインストールされたSlack Botアプリ（各ワークスペースで個別にBot Tokenを取得）
+- PowerShell 5.1+ (Windows環境でのみ必要)

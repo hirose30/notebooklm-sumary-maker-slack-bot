@@ -26,8 +26,9 @@ export class SlackBot {
     this.workspaceKeyMap = workspaceKeyMap;
     this.queue = new SimpleQueue();
 
-    // Initialize processor with completion and error callbacks
+    // Initialize processor with workspace key map and callbacks
     this.processor = new RequestProcessor(
+      workspaceKeyMap, // Pass workspace key mapping for user-data directory routing
       // onJobComplete callback
       async (job) => {
         await this.postCompletionResults(job.slackChannel, job.slackThreadTs, job.id);

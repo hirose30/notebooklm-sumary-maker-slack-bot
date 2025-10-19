@@ -13,18 +13,19 @@ import { db } from '../lib/database.js';
 export class RequestProcessor {
   private queue: SimpleQueue;
   private storage: CloudflareStorage;
-  private notebooklm: NotebookLMAutomation;
+  private workspaceKeyMap: Map<string, string>; // teamId -> workspaceKey mapping
   private isProcessing: boolean = false;
   private onJobComplete?: (job: QueueJob) => Promise<void>;
   private onJobError?: (job: QueueJob, error: Error) => Promise<void>;
 
   constructor(
+    workspaceKeyMap: Map<string, string>,
     onJobComplete?: (job: QueueJob) => Promise<void>,
     onJobError?: (job: QueueJob, error: Error) => Promise<void>
   ) {
     this.queue = new SimpleQueue();
     this.storage = new CloudflareStorage();
-    this.notebooklm = new NotebookLMAutomation();
+    this.workspaceKeyMap = workspaceKeyMap;
     this.onJobComplete = onJobComplete;
     this.onJobError = onJobError;
   }
@@ -41,6 +42,13 @@ export class RequestProcessor {
       const jobLogger = workspace ? workspaceLogger : logger;
       jobLogger.info('Processing request', { id: job.id, url: job.url });
 
+      // Create workspace-specific NotebookLMAutomation instance
+      // Use workspace-specific user-data directory (e.g., ./user-data-ws1, ./user-data-ws2)
+      const userDataDir = workspace?.workspaceKey
+        ? `./user-data-${workspace.workspaceKey}`
+        : './user-data';
+      const notebooklm = new NotebookLMAutomation(userDataDir);
+
       try {
       // Initialize NotebookLM automation
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -48,7 +56,7 @@ export class RequestProcessor {
         currentStep: 'Initializing browser',
       });
 
-      await this.notebooklm.initialize();
+      await notebooklm.initialize();
 
       // Create new notebook
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -56,7 +64,7 @@ export class RequestProcessor {
         currentStep: 'Creating notebook',
       });
 
-      await this.notebooklm.createNotebook();
+      await notebooklm.createNotebook();
 
       // Add URL source
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -64,7 +72,7 @@ export class RequestProcessor {
         currentStep: 'Adding URL source',
       });
 
-      await this.notebooklm.addUrlSource(job.url);
+      await notebooklm.addUrlSource(job.url);
 
       // Wait for source processing
       await new Promise((resolve) => setTimeout(resolve, 10000));
@@ -75,7 +83,7 @@ export class RequestProcessor {
         currentStep: 'Generating audio and video',
       });
 
-      await this.notebooklm.generateBothOverviews();
+      await notebooklm.generateBothOverviews();
 
       // Download audio
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -83,7 +91,7 @@ export class RequestProcessor {
         currentStep: 'Downloading audio',
       });
 
-      const audioBuffer = await this.notebooklm.downloadMedia('audio');
+      const audioBuffer = await notebooklm.downloadMedia('audio');
 
       // Download video
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -91,7 +99,7 @@ export class RequestProcessor {
         currentStep: 'Downloading video',
       });
 
-      const videoBuffer = await this.notebooklm.downloadMedia('video');
+      const videoBuffer = await notebooklm.downloadMedia('video');
 
       // Upload audio to R2
       this.queue.updateJobStatus(job.id, 'processing', {
@@ -180,7 +188,7 @@ export class RequestProcessor {
         jobLogger.info('Continuing to next job after error', { id: job.id });
       } finally {
         // Cleanup
-        await this.notebooklm.cleanup();
+        await notebooklm.cleanup();
       }
     };
 
@@ -210,12 +218,16 @@ export class RequestProcessor {
         return null;
       }
 
+      // Get workspace key from the mapping (teamId -> workspaceKey)
+      const workspaceKey = this.workspaceKeyMap.get(row.team_id) || 'unknown';
+
       return {
         teamId: row.team_id,
         teamName: row.team_name || 'Unknown',
         botToken: row.bot_token,
         botUserId: row.bot_user_id,
         enterpriseId: row.enterprise_id || null,
+        workspaceKey,
       };
     } catch (error) {
       logger.error('Failed to load workspace context', { error, workspaceId });

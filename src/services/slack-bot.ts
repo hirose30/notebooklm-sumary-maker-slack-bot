@@ -20,8 +20,10 @@ export class SlackBot {
   private isRunning: boolean = false;
   private queue: SimpleQueue;
   private processor: RequestProcessor;
+  private workspaceKeyMap: Map<string, string>; // T025: Store workspace key mapping
 
-  constructor() {
+  constructor(workspaceKeyMap: Map<string, string>) { // T025: Accept workspace key mapping
+    this.workspaceKeyMap = workspaceKeyMap;
     this.queue = new SimpleQueue();
 
     // Initialize processor with completion and error callbacks
@@ -87,13 +89,15 @@ export class SlackBot {
   private setupEventHandlers(): void {
     // Handle app mentions
     this.app.event('app_mention', async ({ event, client, context }) => {
-      // Extract workspace context from Bolt context
+      // T025: Extract workspace context from Bolt context with workspaceKey
+      const teamId = context.teamId!;
       const workspace = {
-        teamId: context.teamId!,
+        teamId,
         teamName: (context as any).teamName || 'Unknown',
         botToken: context.botToken!,
         botUserId: context.botUserId!,
         enterpriseId: (context as any).enterpriseId || null,
+        workspaceKey: this.workspaceKeyMap.get(teamId) || 'unknown', // T025: Get workspace key from mapping
       };
 
       // Run the handler within workspace context

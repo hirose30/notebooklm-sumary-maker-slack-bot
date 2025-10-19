@@ -4,21 +4,26 @@
 
 import 'dotenv/config';
 import { SlackBot } from './services/slack-bot.js';
-import { logger } from './lib/logger.js';
+import { logger, LogLevel } from './lib/logger.js';
 import { loadWorkspacesFromEnv } from './lib/workspace-loader.js';
 
 async function main() {
+  // T013: Log startup message with current log level
+  const logLevelName = ['ERROR', 'WARN', 'INFO', 'DEBUG'][logger.getLogLevel()];
+
   logger.info('╔═══════════════════════════════════════╗');
   logger.info('║  NotebookLM Slack Bot Starting...   ║');
   logger.info('╚═══════════════════════════════════════╝');
   logger.info('');
+  logger.info(`Log level: ${logLevelName} (set LOG_LEVEL env var to change)`);
+  logger.info('');
 
   // Load workspace configurations from environment variables
   logger.info('Loading workspace configurations...');
-  const { workspaces, primaryAppToken } = await loadWorkspacesFromEnv();
+  const { workspaces, workspaceKeyMap, primaryAppToken } = await loadWorkspacesFromEnv();
   logger.info('');
 
-  const bot = new SlackBot();
+  const bot = new SlackBot(workspaceKeyMap); // T025: Pass workspace key mapping
 
   try {
     await bot.start();

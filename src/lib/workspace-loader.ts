@@ -69,9 +69,13 @@ async function fetchWorkspaceInfo(botToken: string): Promise<{
  *
  * TEAM_ID, TEAM_NAME, BOT_ID, BOT_USER_ID are auto-fetched from Slack API
  *
- * @returns Array of loaded workspace keys and the primary app token for Socket Mode
+ * @returns Array of loaded workspace keys, workspace key mapping, and the primary app token for Socket Mode
  */
-export async function loadWorkspacesFromEnv(): Promise<{ workspaces: string[]; primaryAppToken: string | undefined }> {
+export async function loadWorkspacesFromEnv(): Promise<{
+  workspaces: string[];
+  workspaceKeyMap: Map<string, string>; // teamId -> workspaceKey (e.g., "T01ABC" -> "ws1")
+  primaryAppToken: string | undefined;
+}> {
   const workspaces: WorkspaceEnvConfig[] = [];
 
   // Find all workspace configuration keys (WS1, WS2, WS3, ...)
@@ -165,6 +169,8 @@ export async function loadWorkspacesFromEnv(): Promise<{ workspaces: string[]; p
   `);
 
   const loadedWorkspaces: string[] = [];
+  // T024: Build workspace key mapping (teamId -> workspaceKey)
+  const workspaceKeyMap = new Map<string, string>();
 
   for (const ws of workspaces) {
     try {
@@ -183,14 +189,18 @@ export async function loadWorkspacesFromEnv(): Promise<{ workspaces: string[]; p
 
       loadedWorkspaces.push(ws.teamId);
 
+      // T024: Store workspace key mapping (WS1 -> ws1 lowercase)
+      workspaceKeyMap.set(ws.teamId, ws.key.toLowerCase());
+
       logger.info('Workspace synced to database', {
         key: ws.key,
         teamId: ws.teamId,
         teamName: ws.teamName,
+        workspaceKey: ws.key.toLowerCase(),
         hasAppToken: !!ws.appToken,
       });
 
-      console.log(`✅ Loaded workspace: ${ws.teamName} (${ws.teamId})`);
+      console.log(`✅ Loaded workspace: ${ws.teamName} (${ws.teamId}) [${ws.key.toLowerCase()}]`);
     } catch (error) {
       logger.error('Failed to sync workspace to database', {
         key: ws.key,
@@ -214,6 +224,7 @@ export async function loadWorkspacesFromEnv(): Promise<{ workspaces: string[]; p
 
   return {
     workspaces: loadedWorkspaces,
+    workspaceKeyMap, // T024: Return workspace key mapping
     primaryAppToken,
   };
 }

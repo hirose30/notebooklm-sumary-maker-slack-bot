@@ -66,6 +66,16 @@ async function withRetry<T>(
 export class NotebookLMAutomation {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
+  private userDataDir: string;
+
+  /**
+   * Constructor
+   * @param userDataDir - Optional user data directory path for browser auth persistence
+   *                      Defaults to config.userDataDir if not provided
+   */
+  constructor(userDataDir?: string) {
+    this.userDataDir = userDataDir || config.userDataDir;
+  }
 
   /**
    * Initialize Playwright browser with persistent context
@@ -75,11 +85,11 @@ export class NotebookLMAutomation {
     try {
       logger.info('Initializing Playwright browser', {
         headless: config.playwrightHeadless,
-        userDataDir: config.userDataDir,
+        userDataDir: this.userDataDir,
       });
 
       // Launch persistent context - preserves cookies and auth
-      this.context = await chromium.launchPersistentContext(config.userDataDir, {
+      this.context = await chromium.launchPersistentContext(this.userDataDir, {
         headless: config.playwrightHeadless,
         args: [
           '--disable-blink-features=AutomationControlled', // Avoid bot detection

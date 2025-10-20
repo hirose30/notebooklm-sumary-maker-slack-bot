@@ -175,4 +175,11 @@ export interface WorkspaceContext {
    * Example: "E01ABCDEFGH"
    */
   enterpriseId: string | null;
+
+  /**
+   * T007: Workspace key for log file routing
+   * Example: "ws1", "ws2", "ws3"
+   * Extracted from environment variable name (SLACK_WS1_BOT_TOKEN → "ws1")
+   */
+  workspaceKey: string;
 }

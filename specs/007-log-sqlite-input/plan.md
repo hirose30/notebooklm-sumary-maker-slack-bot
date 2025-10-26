@@ -157,7 +157,7 @@ interface LogLevelConfig {
 
 // Log transport interface
 interface ILogTransport {
-  write(level: LogLevel, formattedMessage: string): void;
+  write(level: LogLevel, formattedMessage: string, workspaceId: string | null): Promise<void>;
   close(): Promise<void>;
 }
 ```

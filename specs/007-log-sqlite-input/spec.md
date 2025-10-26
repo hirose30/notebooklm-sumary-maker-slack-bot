@@ -12,7 +12,7 @@
 
 - Q: What log rotation strategy should the system use to prevent unbounded disk space growth? → A: Daily rotation - create new log file each day, keep all historical files indefinitely
 - Q: What should the system do when log files cannot be written (disk full, permission denied)? → A: Log error to stderr only and continue operation - bot continues processing requests without persistent logs
-- Q: How should the system organize logs from bot startup and system-level operations that occur before workspace context is available? → A: Write to a shared system log file named "system.log" (no workspace identifier) with daily rotation
+- Q: How should the system organize logs from bot startup and system-level operations that occur before workspace context is available? → A: Write to a shared system log file with daily rotation (format: `system-YYYY-MM-DD.log`, no workspace identifier)
 - Q: What should happen when the log level environment variable is set to an invalid value? → A: Default to INFO level and log a warning about the invalid value to stderr
 - Q: How should the system handle concurrent writes to the same log file from different workspaces? → A: Rely on Node.js file system append operations being atomic at the OS level - no additional locking
 
@@ -84,7 +84,7 @@ All critical edge cases have been addressed in the Functional Requirements and C
 - **FR-005**: System MUST write all log output to persistent log files in the logs directory
 - **FR-006**: System MUST include workspace identifier (ws1, ws2, etc.) in log filenames for workspace-specific logs
 - **FR-007**: System MUST create separate log files per workspace to enable workspace-specific log analysis
-- **FR-008**: System MUST handle system-level logs (startup, workspace loading) that occur before workspace context is available by writing them to a shared system log file named "system.log" with daily rotation
+- **FR-008**: System MUST handle system-level logs (startup, workspace loading) that occur before workspace context is available by writing them to a shared system log file with daily rotation (format: `system-YYYY-MM-DD.log`)
 - **FR-009**: System MUST include timestamps in ISO 8601 format for all log entries
 - **FR-010**: System MUST preserve the current workspace-aware logging behavior (automatic injection of teamId and teamName in log metadata)
 - **FR-011**: System MUST ensure log files are created with appropriate permissions (readable by operators)
@@ -114,8 +114,9 @@ All critical edge cases have been addressed in the Functional Requirements and C
 - The existing AsyncLocalStorage-based workspace context mechanism will continue to work and provide workspace identification
 - The custom logger in `/src/lib/logger.ts` will be enhanced rather than replaced with a third-party library (consistent with the existing "can be upgraded later" comment)
 - Log file format will remain consistent with current console format: `[ISO_TIMESTAMP] LEVEL: message {metadata}`
-- The logs directory (`/logs`) already exists and will be used for log file output
+- The logs directory (`./logs/`) will be created automatically if it doesn't exist (via T001) and will be used for log file output
 - Workspace identifiers (WS1, WS2) will be extracted from the environment variable names (`SLACK_WS1_BOT_TOKEN`, etc.) or from workspace context
+- Each workspace uses a separate Chrome user-data directory (`./user-data-ws1`, `./user-data-ws2`, etc.) to enable different NotebookLM accounts to be logged in simultaneously for multi-workspace deployments
 - Standard output (stdout) will continue to be the primary interface for real-time monitoring; log files are for persistence and historical review
 - Log level changes require bot restart (no dynamic log level changes at runtime)
 - Concurrent log writes rely on Node.js file system append operations being atomic at the OS level (no additional file locking mechanism required)

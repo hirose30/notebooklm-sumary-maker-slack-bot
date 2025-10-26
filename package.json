@@ -18,6 +18,8 @@
     "bot:start:ws1:win": "powershell -ExecutionPolicy Bypass -File scripts/start-ws1.ps1",
     "bot:start:ws2:win": "powershell -ExecutionPolicy Bypass -File scripts/start-ws2.ps1",
     "notebooklm:login": "tsx scripts/manual-login.ts",
+    "notebooklm:login:ws1": "tsx scripts/login-ws1.ts",
+    "notebooklm:login:ws2": "tsx scripts/login-ws2.ts",
     "notebooklm:login:ws1:win": "powershell -ExecutionPolicy Bypass -File scripts/login-ws1.ps1",
     "notebooklm:login:ws2:win": "powershell -ExecutionPolicy Bypass -File scripts/login-ws2.ps1"
   },

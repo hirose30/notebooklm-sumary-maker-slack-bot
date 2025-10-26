@@ -59,6 +59,9 @@ npx tsx scripts/test-login-only.ts
 npm run bot:start
 ```
 
+**複数ワークスペース対応**:
+複数のSlackワークスペースで利用する場合は、[マルチワークスペース設定ガイド](./MULTI_WORKSPACE_SETUP.md)を参照してください。
+
 ### 5. Slack で使う
 
 1. チャンネルにボットを招待:
@@ -92,6 +95,7 @@ npm run bot:start
 ## 📖 ドキュメント
 
 - [セットアップガイド](./docs/setup-guide.md) - 詳細な設定手順
+- [マルチワークスペース設定](./MULTI_WORKSPACE_SETUP.md) - 複数のSlackワークスペースで運用する方法
 - [NotebookLM 自動化](./docs/notebooklm-automation.md) - 技術詳細
 
 ## 🧪 テスト

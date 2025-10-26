@@ -15,6 +15,7 @@
 - Q: How should the system organize logs from bot startup and system-level operations that occur before workspace context is available? → A: Write to a shared system log file with daily rotation (format: `system-YYYY-MM-DD.log`, no workspace identifier)
 - Q: What should happen when the log level environment variable is set to an invalid value? → A: Default to INFO level and log a warning about the invalid value to stderr
 - Q: How should the system handle concurrent writes to the same log file from different workspaces? → A: Rely on Node.js file system append operations being atomic at the OS level - no additional locking
+- Q: How should the system handle system logs when running separate processes per workspace (multi-workspace deployment)? → A: Use `WORKSPACE_ID` environment variable to separate system logs by process - format: `system-{WORKSPACE_ID}-YYYY-MM-DD.log` (e.g., `system-ws1-2025-10-26.log`, `system-ws2-2025-10-26.log`)
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -90,6 +91,7 @@ All critical edge cases have been addressed in the Functional Requirements and C
 - **FR-011**: System MUST ensure log files are created with appropriate permissions (readable by operators)
 - **FR-012**: System MUST handle log write failures gracefully without crashing the bot; when log files cannot be written (disk full, permission denied), the system MUST log the error to stderr and continue operation without persistent logs
 - **FR-013**: System MUST rotate log files daily, creating a new log file each day while retaining all historical log files indefinitely
+- **FR-014**: System MUST support process-specific system log files via `WORKSPACE_ID` environment variable to prevent file write conflicts in multi-process deployments (format: `system-{WORKSPACE_ID}-YYYY-MM-DD.log`)
 
 ### Key Entities *(include if feature involves data)*
 
@@ -120,3 +122,4 @@ All critical edge cases have been addressed in the Functional Requirements and C
 - Standard output (stdout) will continue to be the primary interface for real-time monitoring; log files are for persistence and historical review
 - Log level changes require bot restart (no dynamic log level changes at runtime)
 - Concurrent log writes rely on Node.js file system append operations being atomic at the OS level (no additional file locking mechanism required)
+- In multi-workspace deployments, each workspace runs in a separate process (using `npm run bot:start:ws1` or `npm run bot:start:ws2`) with the `WORKSPACE_ID` environment variable set to avoid system log file conflicts

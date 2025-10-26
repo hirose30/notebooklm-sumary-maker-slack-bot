@@ -99,6 +99,8 @@
 - [x] T027 [US3] Update Logger methods (debug, info, warn, error) to write to both console AND file transport
 - [x] T028 [US3] Update workspaceLogger to pass workspace context to LogTransport for file routing
 - [x] T029 [US3] Handle system logs (no workspace context) by using "system" as workspaceId in LogTransport
+- [x] T029b [US3] Add WORKSPACE_ID environment variable support to getLogFilePath() in src/lib/log-transport.ts to generate process-specific system logs (format: system-{WORKSPACE_ID}-YYYY-MM-DD.log)
+- [x] T029c [P] [US3] Update start-ws1.sh and start-ws2.sh to export WORKSPACE_ID environment variable (ws1, ws2 respectively)
 
 **Checkpoint**: All user stories should now be independently functional - console filtering works, log levels configurable, files written with workspace IDs
 
@@ -119,6 +121,7 @@
 - [ ] T038 Manual testing: Process requests from multiple workspaces, verify separate log files created
 - [ ] T039 Manual testing: Test disk full scenario (simulate ENOSPC), verify bot continues without crashing
 - [ ] T040 Manual testing: Verify log file rotation at midnight (or simulate date change)
+- [x] T041 Manual testing: Run multi-process deployment (npm run bot:start:ws1 and npm run bot:start:ws2 in separate terminals), verify system-ws1-*.log and system-ws2-*.log are created separately without file conflicts
 
 ---
 
@@ -255,13 +258,13 @@ With multiple developers:
 
 ## Task Count Summary
 
-- **Total Tasks**: 40
+- **Total Tasks**: 43
 - **Setup**: 2 tasks (T001-T002)
 - **Foundational**: 5 tasks (T003-T007)
 - **User Story 1 (P1 - Clean Console)**: 6 tasks (T008-T013)
 - **User Story 2 (P2 - Log Levels)**: 3 tasks (T014-T016)
-- **User Story 3 (P1 - Persistent Files)**: 13 tasks (T017-T029)
-- **Polish & Testing**: 11 tasks (T030-T040)
+- **User Story 3 (P1 - Persistent Files)**: 15 tasks (T017-T029, T029b-T029c)
+- **Polish & Testing**: 12 tasks (T030-T041)
 
 **Parallel Opportunities**: 12 tasks marked [P] can run in parallel within their phases
 

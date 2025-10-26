@@ -62,9 +62,11 @@ tests/
     └── logging-e2e.test.ts     # NEW: Full logging flow with workspaces
 
 logs/                    # Log output directory (created at runtime)
-├── system-YYYY-MM-DD.log       # System/startup logs
-├── ws1-YYYY-MM-DD.log          # Workspace 1 logs
-└── ws2-YYYY-MM-DD.log          # Workspace 2 logs
+├── system-YYYY-MM-DD.log       # System/startup logs (single process)
+├── system-ws1-YYYY-MM-DD.log   # System logs for WS1 process (multi-process deployment)
+├── system-ws2-YYYY-MM-DD.log   # System logs for WS2 process (multi-process deployment)
+├── ws1-YYYY-MM-DD.log          # Workspace 1 request logs
+└── ws2-YYYY-MM-DD.log          # Workspace 2 request logs
 ```
 
 **Structure Decision**: Single project structure maintained. Logging enhancement adds:

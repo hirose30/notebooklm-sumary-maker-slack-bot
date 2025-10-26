@@ -61,6 +61,13 @@ export class LogTransport implements ILogTransport {
   // T019: getLogFilePath() implementation
   getLogFilePath(workspaceId: string | null): string {
     const today = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+
+    // Use workspace-specific system log if WORKSPACE_ID env var is set
+    if (!workspaceId && process.env.WORKSPACE_ID) {
+      const wsId = `system-${process.env.WORKSPACE_ID}`;
+      return join(this.logDirectory, `${wsId}-${today}.log`);
+    }
+
     const wsId = workspaceId || 'system';
     return join(this.logDirectory, `${wsId}-${today}.log`);
   }

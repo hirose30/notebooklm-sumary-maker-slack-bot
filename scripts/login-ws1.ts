@@ -6,6 +6,7 @@
  * Session is saved to user-data-ws1 directory
  */
 
+import 'dotenv/config';
 import { NotebookLMAutomation } from '../src/services/notebooklm-automation.js';
 import { logger } from '../src/lib/logger.js';
 

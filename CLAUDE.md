@@ -36,4 +36,28 @@ Node.js 20+ with TypeScript 5.x: Follow standard conventions
 - 003-url: Added Node.js 20+ / TypeScript 5.x + @slack/bolt (Slack Bot SDK)
 
 <!-- MANUAL ADDITIONS START -->
+
+## Development Best Practices
+
+### Managing Background Processes
+
+When working with background processes (e.g., `npm run bot:start:ws1` or `npm run bot:start:ws2`), use the `KillShell` tool or bash `pkill` command carefully:
+
+**⚠️ IMPORTANT: Do NOT use generic process kill commands**
+
+❌ **DO NOT** run:
+- `pkill node` - Will kill ALL Node.js processes including other development servers
+- `pkill npm` - Will kill ALL npm processes
+- `pkill tsx` - Will kill ALL TypeScript execution processes
+
+✅ **DO** use:
+- `KillShell` tool with specific shell_id - Kills only the target background process
+- `pkill -f "specific-command-pattern"` - Kills processes matching exact pattern
+- Example: `pkill -f "user-data-ws1"` - Kills only WS1 Chromium processes
+
+**Why this matters:**
+- Multiple Node.js/npm processes may be running simultaneously
+- Killing all Node.js processes can terminate unrelated development servers
+- Using specific patterns ensures only the target process is stopped
+
 <!-- MANUAL ADDITIONS END -->

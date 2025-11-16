@@ -30,10 +30,6 @@ Node.js 20+ with TypeScript 5.x: Follow standard conventions
 ## Recent Changes
 - 007-log-sqlite-input: Enhanced logging system with configurable log levels (LOG_LEVEL env var), file output to ./logs/ with workspace identifiers, daily rotation, SQLite query filtering
 - 007-log-sqlite-input: Log files named {workspace}-{YYYY-MM-DD}.log (e.g., ws1-2025-10-18.log, system-2025-10-18.log), indefinite retention
-- 006-bot-slack-ws: Added multi-workspace Slack support with OAuth + InstallationStore, AsyncLocalStorage for workspace context isolation
-- 006-bot-slack-ws: Database migration 003 adds slack_installations table and workspace_id column to requests table
-- 005-: Added TypeScript 5.3.3 + Node.js 20+ + @slack/bolt 4.5.0, better-sqlite3 12.4.1
-- 003-url: Added Node.js 20+ / TypeScript 5.x + @slack/bolt (Slack Bot SDK)
 
 <!-- MANUAL ADDITIONS START -->
 

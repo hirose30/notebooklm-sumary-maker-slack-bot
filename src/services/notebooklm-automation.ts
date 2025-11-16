@@ -7,6 +7,9 @@
 import { chromium, Browser, BrowserContext, Page } from 'playwright';
 import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
+import { UISelectorFactory } from './ui-selector-factory.js';
+import type { UIVersion } from '../models/ui-version.js';
+import type { UISelector } from '../lib/ui-selectors/types.js';
 
 /**
  * Retry configuration
@@ -67,14 +70,27 @@ export class NotebookLMAutomation {
   private context: BrowserContext | null = null;
   private page: Page | null = null;
   private userDataDir: string;
+  private uiVersion: UIVersion;
+  private selectorFactory: UISelectorFactory;
 
   /**
    * Constructor
    * @param userDataDir - Optional user data directory path for browser auth persistence
    *                      Defaults to config.userDataDir if not provided
+   * @param uiVersion - Optional UI version ('old' | 'new')
+   *                    Defaults to 'old' if not provided (FR-008)
    */
-  constructor(userDataDir?: string) {
+  constructor(userDataDir?: string, uiVersion?: UIVersion) {
     this.userDataDir = userDataDir || config.userDataDir;
+    this.uiVersion = uiVersion || 'old'; // FR-008: デフォルトは旧UI
+    this.selectorFactory = new UISelectorFactory();
+
+    // T017: Log UI version being used (FR-009)
+    logger.info('NotebookLMAutomation initialized', {
+      userDataDir: this.userDataDir,
+      uiVersion: this.uiVersion,
+      source: uiVersion ? 'explicit' : 'default',
+    });
   }
 
   /**
@@ -128,6 +144,29 @@ export class NotebookLMAutomation {
   }
 
   /**
+   * Get UI selectors for the current UI version
+   * T015: Helper method to get version-specific selectors
+   */
+  private getSelectors(): UISelector {
+    try {
+      return this.selectorFactory.getSelectors(this.uiVersion);
+    } catch (error) {
+      // T018: FR-010, FR-011 - エラーハンドリング
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      logger.error('Failed to get UI selectors', {
+        uiVersion: this.uiVersion,
+        error: errorMessage,
+      });
+
+      throw new Error(
+        `UIバージョン '${this.uiVersion}' のセレクタ取得に失敗しました。\n` +
+        `設定ファイルのNOTEBOOKLM_UI_VERSIONを確認してください。\n` +
+        `エラー: ${errorMessage}`
+      );
+    }
+  }
+
+  /**
    * Get the browser context
    */
   getContext(): BrowserContext {
@@ -158,24 +197,47 @@ export class NotebookLMAutomation {
    * Create a new notebook
    * T008: Navigate to NotebookLM and create new notebook
    * T013: With retry logic
+   * T016: Uses UI version-specific selectors from getSelectors()
    */
   async createNotebook(): Promise<void> {
+    // T017: Log UI version for this operation (FR-009)
+    logger.info('Creating notebook', { uiVersion: this.uiVersion });
+
     return withRetry(async () => {
       const page = this.getPage();
+      const selectors = this.getSelectors();
 
-      logger.info('Navigating to NotebookLM home page');
-      await page.goto('https://notebooklm.google.com', { waitUntil: 'domcontentloaded' });
+      try {
+        logger.info('Navigating to NotebookLM home page');
+        await page.goto('https://notebooklm.google.com', { waitUntil: 'domcontentloaded' });
 
-      // Wait for create button to appear
-      await page.waitForSelector('button[aria-label="ノートブックを新規作成"]', { timeout: 10000 });
+        // T016: Use UI version-specific selector
+        // Wait for create button to appear
+        await page.waitForSelector(selectors.newProject, { timeout: 10000 });
 
-      logger.info('Clicking "ノートブックを新規作成" button');
-      // Click the create new notebook button by aria-label
-      await page.click('button[aria-label="ノートブックを新規作成"]');
+        logger.info('Clicking "ノートブックを新規作成" button', {
+          selector: selectors.newProject,
+        });
+        // Click the create new notebook button
+        await page.click(selectors.newProject);
 
-      // Wait for notebook page to load
-      await page.waitForTimeout(3000);
-      logger.info('New notebook created successfully');
+        // Wait for notebook page to load
+        await page.waitForTimeout(3000);
+        logger.info('New notebook created successfully', { uiVersion: this.uiVersion });
+      } catch (error) {
+        // T018: FR-010, FR-011 - UI操作失敗時のエラーハンドリング
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('UI interaction failed during notebook creation', {
+          uiVersion: this.uiVersion,
+          error: errorMessage,
+        });
+
+        throw new Error(
+          `UIバージョン '${this.uiVersion}' でのノートブック作成に失敗しました。\n` +
+          `設定ファイルのNOTEBOOKLM_UI_VERSIONがアカウントのUIバージョンと一致しているか確認してください。\n` +
+          `エラー: ${errorMessage}`
+        );
+      }
     }, 'Create Notebook');
   }
 
@@ -183,40 +245,77 @@ export class NotebookLMAutomation {
    * Add URL source to the current notebook
    * T009: Implement URL source addition
    * T013: With retry logic
+   * T016: Uses UI version-specific selectors from getSelectors()
    *
    * Note: After creating a new notebook, the source dialog appears automatically
    */
   async addUrlSource(url: string): Promise<void> {
+    // T017: Log UI version for this operation (FR-009)
+    logger.info('Adding URL source', { url, uiVersion: this.uiVersion });
+
     return withRetry(async () => {
       const page = this.getPage();
+      const selectors = this.getSelectors();
 
-      logger.info('Adding URL source', { url });
+      try {
+        // Wait for source dialog to appear (appears automatically after notebook creation)
+        logger.info('Waiting for source dialog');
+        await page.waitForSelector(selectors.addSource, { timeout: 10000 });
 
-      // Wait for source dialog to appear (appears automatically after notebook creation)
-      logger.info('Waiting for source dialog');
-      await page.waitForSelector('text="ウェブサイト"', { timeout: 10000 });
+        // Click "ウェブサイト" option
+        logger.info('Selecting "ウェブサイト" option', {
+          selector: selectors.addSource,
+        });
+        await page.click(selectors.addSource);
 
-      // Click "ウェブサイト" option
-      logger.info('Selecting "ウェブサイト" option');
-      await page.click('text="ウェブサイト"');
+        // Wait for URL input form to appear
+        await page.waitForTimeout(2000);
+        // T016: Use UI version-specific selector
+        await page.waitForSelector(selectors.urlInput, { timeout: 10000 });
 
-      // Wait for URL input form to appear
-      await page.waitForTimeout(2000);
-      await page.waitForSelector('textarea.mat-mdc-input-element', { timeout: 10000 });
+        // Click to focus the input field first (Material Design forms need explicit focus)
+        logger.info('Clicking URL input to focus', {
+          selector: selectors.urlInput,
+        });
+        await page.click(selectors.urlInput);
+        await page.waitForTimeout(500); // Wait for focus to be applied
 
-      // Enter URL
-      logger.info('Entering URL');
-      await page.fill('textarea.mat-mdc-input-element', url);
+        // Enter URL
+        logger.info('Entering URL', {
+          selector: selectors.urlInput,
+        });
+        await page.fill(selectors.urlInput, url);
 
-      // Click insert button
-      logger.info('Clicking "挿入" button');
-      await page.click('button:has-text("挿入")');
+        // Click insert button
+        logger.info('Clicking "挿入" button', {
+          selector: selectors.saveButton,
+        });
+        // T016: Use UI version-specific selector
+        await page.click(selectors.saveButton);
 
-      // Wait for source to be processed
-      logger.info('Waiting for source to be processed');
-      await page.waitForSelector('text="1 ソース"', { timeout: 60000 });
+        // Wait for source to be processed
+        logger.info('Waiting for source to be processed', {
+          selector: selectors.summaryArea,
+        });
+        await page.waitForSelector(selectors.summaryArea, { timeout: 60000 });
 
-      logger.info('URL source added successfully', { url });
+        logger.info('URL source added successfully', { url, uiVersion: this.uiVersion });
+      } catch (error) {
+        // T018: FR-010, FR-011 - UI操作失敗時のエラーハンドリング
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        logger.error('UI interaction failed during URL source addition', {
+          uiVersion: this.uiVersion,
+          url,
+          error: errorMessage,
+        });
+
+        throw new Error(
+          `UIバージョン '${this.uiVersion}' でのURLソース追加に失敗しました。\n` +
+          `設定ファイルのNOTEBOOKLM_UI_VERSIONがアカウントのUIバージョンと一致しているか確認してください。\n` +
+          `URL: ${url}\n` +
+          `エラー: ${errorMessage}`
+        );
+      }
     }, `Add URL Source: ${url}`);
   }
 
@@ -224,16 +323,18 @@ export class NotebookLMAutomation {
    * Generate Audio Overview
    * T010: Implement Audio Overview generation
    * T013: With retry logic (single attempt due to long operation)
+   * T016: Uses UI version-specific selectors from getSelectors()
    */
   async generateAudioOverview(): Promise<void> {
     return withRetry(async () => {
       const page = this.getPage();
+      const selectors = this.getSelectors();
 
-      logger.info('Generating Audio Overview');
+      logger.info('Generating Audio Overview', { uiVersion: this.uiVersion });
 
       // Click "音声解説" button in Studio panel (right side)
-      // Use 'blue' class to target Studio panel button (not chat area button)
-      await page.locator('div.blue.create-artifact-button-container:has-text("音声解説")').click();
+      // T016: Use UI version-specific selector
+      await page.locator(selectors.generateNotebook).click();
 
       logger.info('Audio Overview generation started');
 
@@ -303,16 +404,22 @@ export class NotebookLMAutomation {
   /**
    * Generate both Audio and Video Overviews in parallel
    * This is more efficient than sequential generation
+   * T016: Uses UI version-specific selectors from getSelectors()
    */
   async generateBothOverviews(): Promise<void> {
     const page = this.getPage();
+    const selectors = this.getSelectors();
 
-    logger.info('Generating both Audio and Video Overviews in parallel');
+    logger.info('Generating both Audio and Video Overviews in parallel', {
+      uiVersion: this.uiVersion,
+    });
 
     // Click both buttons
-    await page.locator('div.blue.create-artifact-button-container:has-text("音声解説")').click();
+    // T016: Use UI version-specific selector for audio
+    await page.locator(selectors.generateNotebook).click();
     logger.info('Audio Overview generation started');
 
+    // Note: Video button is hardcoded as we don't have a video-specific selector yet
     await page.locator('div.green.create-artifact-button-container:has-text("動画解説")').click();
     logger.info('Video Overview generation started');
 

@@ -3,6 +3,7 @@
  */
 
 import { logger } from './logger.js';
+import type { UIVersion } from '../models/ui-version.js';
 
 export interface Config {
   // Playwright settings
@@ -24,6 +25,9 @@ export interface Config {
   r2SecretAccessKey: string;
   r2BucketName: string;
   r2PublicUrl: string;
+
+  // NotebookLM UI version settings
+  notebookLMUIVersion?: UIVersion;
 }
 
 /**
@@ -94,6 +98,7 @@ function loadConfig(): Config {
     r2SecretAccessKey: process.env.R2_SECRET_ACCESS_KEY!,
     r2BucketName: process.env.R2_BUCKET_NAME!,
     r2PublicUrl: process.env.R2_PUBLIC_URL!,
+    notebookLMUIVersion: process.env.NOTEBOOKLM_UI_VERSION as UIVersion | undefined,
   };
 
   logger.info('Configuration loaded', {

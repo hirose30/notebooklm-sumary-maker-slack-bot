@@ -47,7 +47,8 @@ export class RequestProcessor {
       const userDataDir = workspace?.workspaceKey
         ? `./user-data-${workspace.workspaceKey}`
         : './user-data';
-      const notebooklm = new NotebookLMAutomation(userDataDir);
+      const uiVersion = workspace?.uiVersion || 'old'; // FR-008: Default to old UI
+      const notebooklm = new NotebookLMAutomation(userDataDir, uiVersion);
 
       try {
       // Initialize NotebookLM automation
@@ -206,7 +207,7 @@ export class RequestProcessor {
   private async loadWorkspaceContext(workspaceId: string): Promise<any> {
     try {
       const stmt = db.prepare(`
-        SELECT team_id, team_name, bot_token, bot_user_id, enterprise_id
+        SELECT team_id, team_name, bot_token, bot_user_id, enterprise_id, ui_version
         FROM slack_installations
         WHERE team_id = ?
       `);
@@ -228,6 +229,7 @@ export class RequestProcessor {
         botUserId: row.bot_user_id,
         enterpriseId: row.enterprise_id || null,
         workspaceKey,
+        uiVersion: row.ui_version || 'old', // FR-008: Default to old UI
       };
     } catch (error) {
       logger.error('Failed to load workspace context', { error, workspaceId });

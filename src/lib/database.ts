@@ -61,7 +61,8 @@ export class DatabaseService {
       const migrations = [
         { version: 1, file: '001_initial.sql' },
         { version: 2, file: '002_add_ack_message_ts.sql' },
-        { version: 3, file: '003_multi_workspace.sql' }
+        { version: 3, file: '003_multi_workspace.sql' },
+        { version: 4, file: '004_add_ui_version.sql' }
       ];
 
       // Apply pending migrations

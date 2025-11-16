@@ -5,7 +5,7 @@
 import 'dotenv/config';
 import { SlackBot } from './services/slack-bot.js';
 import { logger, LogLevel } from './lib/logger.js';
-import { loadWorkspacesFromEnv } from './lib/workspace-loader.js';
+import { loadWorkspacesFromEnv, validateUIVersionConfig } from './lib/workspace-loader.js';
 
 async function main() {
   // T013: Log startup message with current log level
@@ -16,6 +16,10 @@ async function main() {
   logger.info('╚═══════════════════════════════════════╝');
   logger.info('');
   logger.info(`Log level: ${logLevelName} (set LOG_LEVEL env var to change)`);
+  logger.info('');
+
+  // T007: Validate UI version configuration on startup (FR-007)
+  validateUIVersionConfig();
   logger.info('');
 
   // Load workspace configurations from environment variables

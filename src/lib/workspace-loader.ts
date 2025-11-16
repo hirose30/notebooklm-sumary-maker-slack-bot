@@ -6,6 +6,8 @@
 
 import { db } from './database.js';
 import { logger } from './logger.js';
+import { config } from './config.js';
+import type { UIVersion } from '../models/ui-version.js';
 
 interface WorkspaceEnvConfig {
   key: string; // e.g., "WS1", "WS2"
@@ -15,6 +17,7 @@ interface WorkspaceEnvConfig {
   appToken: string;
   botId: string;
   botUserId: string;
+  uiVersion: UIVersion; // UI version for this workspace
 }
 
 interface SlackAuthTestResponse {
@@ -94,6 +97,7 @@ export async function loadWorkspacesFromEnv(): Promise<{
   for (const wsKey of workspaceKeys) {
     const botToken = process.env[`SLACK_${wsKey}_BOT_TOKEN`];
     const appToken = process.env[`SLACK_${wsKey}_APP_TOKEN`];
+    const uiVersionEnv = process.env[`SLACK_${wsKey}_UI_VERSION`] as UIVersion | undefined;
 
     // Validate required fields
     if (!botToken) {
@@ -103,6 +107,19 @@ export async function loadWorkspacesFromEnv(): Promise<{
       console.warn(`⚠️  Skipping ${wsKey}: Missing SLACK_${wsKey}_BOT_TOKEN`);
       continue;
     }
+
+    // Validate UI version if specified
+    if (uiVersionEnv && uiVersionEnv !== 'old' && uiVersionEnv !== 'new') {
+      logger.error(`Invalid UI version for ${wsKey}`, { version: uiVersionEnv });
+      console.error(`\n=== ❌ Invalid UI Version for ${wsKey} ===`);
+      console.error(`Invalid value for SLACK_${wsKey}_UI_VERSION: "${uiVersionEnv}"`);
+      console.error('Valid values are: "old" or "new"');
+      console.error('==========================================\n');
+      process.exit(1);
+    }
+
+    // Default to global config, or 'old' if not specified
+    const uiVersion: UIVersion = uiVersionEnv || config.notebookLMUIVersion || 'old';
 
     try {
       // Fetch workspace metadata from Slack API
@@ -119,6 +136,7 @@ export async function loadWorkspacesFromEnv(): Promise<{
         appToken: appToken || '',
         botId: workspaceInfo.botId,
         botUserId: workspaceInfo.botUserId,
+        uiVersion: uiVersion,
       });
 
       logger.info(`Successfully fetched workspace info for ${wsKey}`, {
@@ -151,14 +169,16 @@ export async function loadWorkspacesFromEnv(): Promise<{
     INSERT INTO slack_installations (
       team_id, team_name, enterprise_id,
       bot_token, bot_id, bot_user_id, bot_scopes,
+      ui_version,
       installed_at, updated_at
-    ) VALUES (?, ?, NULL, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ) VALUES (?, ?, NULL, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT(team_id, enterprise_id) DO UPDATE SET
       team_name = excluded.team_name,
       bot_token = excluded.bot_token,
       bot_id = excluded.bot_id,
       bot_user_id = excluded.bot_user_id,
       bot_scopes = excluded.bot_scopes,
+      ui_version = excluded.ui_version,
       updated_at = CURRENT_TIMESTAMP
   `);
 
@@ -184,7 +204,8 @@ export async function loadWorkspacesFromEnv(): Promise<{
         ws.botToken,
         ws.botId,
         ws.botUserId,
-        JSON.stringify(['app_mentions:read', 'chat:write', 'channels:history', 'groups:history', 'im:history', 'mpim:history'])
+        JSON.stringify(['app_mentions:read', 'chat:write', 'channels:history', 'groups:history', 'im:history', 'mpim:history']),
+        ws.uiVersion
       );
 
       loadedWorkspaces.push(ws.teamId);
@@ -198,9 +219,10 @@ export async function loadWorkspacesFromEnv(): Promise<{
         teamName: ws.teamName,
         workspaceKey: ws.key.toLowerCase(),
         hasAppToken: !!ws.appToken,
+        uiVersion: ws.uiVersion,
       });
 
-      console.log(`✅ Loaded workspace: ${ws.teamName} (${ws.teamId}) [${ws.key.toLowerCase()}]`);
+      console.log(`✅ Loaded workspace: ${ws.teamName} (${ws.teamId}) [${ws.key.toLowerCase()}] - UI: ${ws.uiVersion}`);
     } catch (error) {
       logger.error('Failed to sync workspace to database', {
         key: ws.key,
@@ -227,4 +249,49 @@ export async function loadWorkspacesFromEnv(): Promise<{
     workspaceKeyMap, // T024: Return workspace key mapping
     primaryAppToken,
   };
+}
+
+/**
+ * Validate UI version configuration on startup
+ * FR-007: Refuse to start with error code if configuration is malformed or contains invalid UI version settings
+ */
+export function validateUIVersionConfig(): void {
+  const version = config.notebookLMUIVersion;
+
+  if (version && version !== 'old' && version !== 'new') {
+    logger.error('Invalid NOTEBOOKLM_UI_VERSION in config', { version });
+    console.error('\n=== ❌ Invalid UI Version Configuration ===');
+    console.error(`Invalid value for NOTEBOOKLM_UI_VERSION: "${version}"`);
+    console.error('Valid values are: "old" or "new"');
+    console.error('==========================================\n');
+    process.exit(1); // FR-007: 不正な設定で起動拒否
+  }
+
+  logger.info('UI version config validated', {
+    version: version || 'old (default)',
+    source: version ? 'explicit' : 'default',
+  });
+
+  console.log(`✅ UI Version: ${version || 'old (default)'}`);
+}
+
+/**
+ * Get UI version for a workspace
+ * FR-008: Default to old UI version when workspace configuration doesn't specify one
+ *
+ * @param workspaceId - Workspace identifier (team_id from slack_installations)
+ * @returns UIVersion - 'old' or 'new'
+ */
+export function getUIVersion(workspaceId: string): UIVersion {
+  // Query database for workspace-specific UI version
+  const result = db
+    .prepare('SELECT ui_version FROM slack_installations WHERE team_id = ?')
+    .get(workspaceId) as { ui_version: UIVersion } | undefined;
+
+  if (result?.ui_version) {
+    return result.ui_version;
+  }
+
+  // Fallback to global config or default
+  return config.notebookLMUIVersion || 'old'; // FR-008: デフォルトは旧UI
 }

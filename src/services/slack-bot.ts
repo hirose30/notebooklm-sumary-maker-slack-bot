@@ -502,20 +502,48 @@ export class SlackBot {
             error: slackUploadError,
           });
 
-          // Fallback: Post message without infographic (thread only)
+          // Fallback: Post message without infographic to thread
           await client.chat.postMessage({
             channel,
             thread_ts: threadTs,
             text: message,
           });
+
+          // Always post channel broadcast with thread link
+          const permalinkResult = await client.chat.getPermalink({
+            channel,
+            message_ts: threadTs,
+          });
+          const threadUrl = permalinkResult.permalink!;
+
+          await client.chat.postMessage({
+            channel,
+            text: `<${threadUrl}|要約>`,
+          });
+
+          logger.info('Channel message with thread link posted (fallback)', { jobId });
         }
       } else {
-        // No infographic: Post message to thread only
+        // No infographic: Post message to thread and broadcast to channel
         await client.chat.postMessage({
           channel,
           thread_ts: threadTs,
           text: message,
         });
+
+        // Always post channel broadcast with thread link
+        const permalinkResult = await client.chat.getPermalink({
+          channel,
+          message_ts: threadTs,
+        });
+        const threadUrl = permalinkResult.permalink!;
+
+        await client.chat.postMessage({
+          channel,
+          text: `<${threadUrl}|要約>`,
+        });
+
+        logger.info('Channel message with thread link posted (no infographic)', { jobId });
       }
 
       logger.info('Posted completion results with broadcast', { jobId, channel });

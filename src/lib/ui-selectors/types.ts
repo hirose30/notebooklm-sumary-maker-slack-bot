@@ -24,6 +24,23 @@ export interface ActionStep {
 }
 
 /**
+ * インフォグラフィック検出結果
+ */
+export interface InfographicResult {
+  /** インフォグラフィックが検出されたか */
+  detected: boolean;
+
+  /** ファイルサイズ（バイト） */
+  fileSize?: number;
+
+  /** MIMEタイプ */
+  mimeType?: string;
+
+  /** 検出されたインフォグラフィック数 */
+  count?: number;
+}
+
+/**
  * UIバージョン別のセレクタセット
  * NotebookLMの各UI要素に対応するセレクタを定義
  */
@@ -51,6 +68,9 @@ export interface UISelector {
 
   /** サマリー表示エリア */
   summaryArea: string;
+
+  /** インフォグラフィック生成ボタン */
+  generateInfographic?: string;
 
   /** アクションフロー（操作手順のマップ） */
   actions: Record<string, ActionStep[]>;

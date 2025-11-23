@@ -31,6 +31,34 @@ export interface Config {
 }
 
 /**
+ * File size limits for various platforms
+ */
+export const FILE_SIZE_LIMITS = {
+  /** Slack free plan limit (5MB) */
+  slack_free: 5 * 1024 * 1024,
+
+  /** Slack paid plan limit (1GB) */
+  slack_max: 1024 * 1024 * 1024,
+
+  /** Expected infographic size (10MB) */
+  expected_infographic: 10 * 1024 * 1024,
+} as const;
+
+/**
+ * Timeout values for various operations (milliseconds)
+ */
+export const TIMEOUT_VALUES = {
+  /** Infographic generation timeout (60 seconds) */
+  infographic_generation: 60000,
+
+  /** Infographic download timeout (30 seconds) */
+  infographic_download: 30000,
+
+  /** Slack file upload timeout (5 seconds) */
+  slack_file_upload: 5000,
+} as const;
+
+/**
  * Validate environment variables
  * Fail-fast if required configuration is missing or invalid
  */

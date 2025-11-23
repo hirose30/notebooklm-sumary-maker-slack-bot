@@ -30,8 +30,8 @@ export class SlackBot {
     this.processor = new RequestProcessor(
       workspaceKeyMap, // Pass workspace key mapping for user-data directory routing
       // onJobComplete callback
-      async (job) => {
-        await this.postCompletionResults(job.slackChannel, job.slackThreadTs, job.id);
+      async (job, infographicBuffer, errors) => {
+        await this.postCompletionResults(job.slackChannel, job.slackThreadTs, job.id, infographicBuffer, errors);
       },
       // onJobError callback
       async (job, error) => {
@@ -323,7 +323,9 @@ export class SlackBot {
   async postCompletionResults(
     channel: string,
     threadTs: string,
-    jobId: number
+    jobId: number,
+    infographicBuffer?: Buffer,
+    errors?: string[]
   ): Promise<void> {
     try {
       const request = this.queue.getRequest(jobId);
@@ -370,6 +372,7 @@ export class SlackBot {
       const audioMedia = media.find((m) => m.mediaType === 'audio');
       const videoMedia = media.find((m) => m.mediaType === 'video');
 
+      // Build completion message text
       let message = '✅ 処理が完了しました！\n\n';
 
       if (audioMedia) {
@@ -382,15 +385,138 @@ export class SlackBot {
         message += `<${videoMedia.r2PublicUrl}|🎬 動画要約> (${videoSize})\n`;
       }
 
+      // FR-008: Add errors section if any artifact failed
+      if (errors && errors.length > 0) {
+        message += `\n⚠️ 一部の生成でエラーが発生しました:\n`;
+        errors.forEach(error => {
+          message += `• ${error}\n`;
+        });
+      }
+
       message += `\n⏰ リンクは7日間有効です`;
 
-      // CRITICAL: Use reply_broadcast for channel visibility (FR-005)
-      await client.chat.postMessage({
-        channel,
-        thread_ts: threadTs,
-        reply_broadcast: true,  // Always true - mandatory requirement
-        text: message
-      });
+      // If infographic is available, post everything together via files.uploadV2
+      if (infographicBuffer) {
+        try {
+          logger.info('Uploading infographic with completion message to Slack', { jobId, size: infographicBuffer.length });
+
+          const infographicFilename = `infographic-${jobId}.png`;
+
+          // Upload file with completion message as initial_comment
+          const result = await client.files.uploadV2({
+            channel_id: channel,
+            thread_ts: threadTs,
+            file: infographicBuffer,
+            filename: infographicFilename,
+            title: 'NotebookLM インフォグラフィック',
+            initial_comment: message,
+          });
+
+          if (!result.ok) {
+            throw new Error('Slack file upload failed');
+          }
+
+          // files.uploadV2 returns { ok: true, files: [...] } not { file: {...} }
+          const files = (result as any).files;
+          if (files && files.length > 0) {
+            const fileData = files[0];
+            logger.info('Infographic uploaded to thread successfully', {
+              fileId: fileData.id,
+              size: infographicBuffer.length,
+            });
+
+            // Get thread permalink by finding the file message (with retry)
+            let fileMessage: any = null;
+            const maxRetries = 3;
+            const retryDelay = 3000; // 3 seconds
+
+            for (let attempt = 1; attempt <= maxRetries; attempt++) {
+              logger.info('Searching for file message in thread', {
+                jobId,
+                attempt,
+                maxRetries,
+              });
+
+              const repliesResult = await client.conversations.replies({
+                channel,
+                ts: threadTs,
+              });
+
+              const messages = (repliesResult as any).messages || [];
+              fileMessage = messages.find((m: any) => m.files && m.files.length > 0);
+
+              if (fileMessage) {
+                logger.info('File message found in thread', {
+                  jobId,
+                  attempt,
+                  messageTs: fileMessage.ts,
+                });
+                break;
+              }
+
+              if (attempt < maxRetries) {
+                logger.info('File message not found, retrying...', {
+                  jobId,
+                  attempt,
+                  nextRetryIn: `${retryDelay / 1000}s`,
+                });
+                await new Promise(resolve => setTimeout(resolve, retryDelay));
+              }
+            }
+
+            if (fileMessage) {
+              const permalinkResult = await client.chat.getPermalink({
+                channel,
+                message_ts: fileMessage.ts,
+              });
+
+              const threadUrl = permalinkResult.permalink!;
+              logger.info('Thread permalink obtained', { threadUrl, jobId });
+
+              // T014: Save Slack file metadata to database
+              this.queue.updateMediaSlackInfo(
+                jobId,
+                'infographic',
+                fileData.id,
+                threadUrl
+              );
+
+              // Post channel message with thread link
+              await client.chat.postMessage({
+                channel,
+                text: `<${threadUrl}|要約>`,
+              });
+
+              logger.info('Channel message with thread link posted', { jobId });
+            } else {
+              logger.warn('Could not find file message for permalink after retries', {
+                jobId,
+                maxRetries,
+              });
+            }
+          }
+        } catch (slackUploadError) {
+          // FR-007: Slack upload failure should not block completion
+          logger.warn('Failed to upload infographic to Slack, posting message without it', {
+            jobId,
+            error: slackUploadError,
+          });
+
+          // Fallback: Post message without infographic (thread only)
+          await client.chat.postMessage({
+            channel,
+            thread_ts: threadTs,
+            text: message,
+          });
+        }
+      } else {
+        // No infographic: Post message to thread only
+        await client.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: message,
+        });
+      }
 
       logger.info('Posted completion results with broadcast', { jobId, channel });
     } catch (error) {

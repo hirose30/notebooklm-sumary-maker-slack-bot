@@ -1,0 +1,397 @@
+openapi: 3.0.3
+info:
+  title: NotebookLM Infographic Integration API
+  version: 1.0.0
+  description: |
+    Internal API contract for NotebookLM infographic detection, download, and Slack upload integration.
+    This is not an external REST API - it defines TypeScript interfaces and method signatures
+    for internal service communication.
+  contact:
+    name: Development Team
+    email: dev@example.com
+
+servers:
+  - url: internal://notebooklm-automation
+    description: Internal service contract (not HTTP)
+
+paths:
+  /infographic/detect:
+    summary: Infographic Detection Contract
+    description: |
+      Contract for NotebookLMAutomation.detectInfographic() method.
+      Detects if an infographic has been generated in the NotebookLM UI.
+    post:
+      operationId: detectInfographic
+      tags:
+        - NotebookLM Automation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                page:
+                  type: object
+                  description: Playwright Page object (opaque reference)
+                uiVersion:
+                  type: string
+                  enum: [old, new]
+                  description: NotebookLM UI version
+                  example: new
+              required:
+                - page
+                - uiVersion
+      responses:
+        '200':
+          description: Detection result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfographicDetectionResult'
+        '500':
+          description: Detection error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /infographic/download:
+    summary: Infographic Download Contract
+    description: |
+      Contract for NotebookLMAutomation.downloadInfographic() method.
+      Downloads the infographic file as a Buffer using Playwright download events.
+    post:
+      operationId: downloadInfographic
+      tags:
+        - NotebookLM Automation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                page:
+                  type: object
+                  description: Playwright Page object
+                uiVersion:
+                  type: string
+                  enum: [old, new]
+                timeout:
+                  type: integer
+                  description: Download timeout in milliseconds (default: from existing audio/video timeout)
+                  example: 60000
+              required:
+                - page
+                - uiVersion
+      responses:
+        '200':
+          description: Download successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InfographicDownloadResult'
+        '408':
+          description: Timeout - Infographic generation took too long
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Download error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /slack/upload-infographic:
+    summary: Slack Infographic Upload Contract
+    description: |
+      Contract for SlackBot.uploadInfographic() method.
+      Uploads infographic Buffer to Slack using files.uploadV2 API.
+    post:
+      operationId: uploadInfographicToSlack
+      tags:
+        - Slack Integration
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                workspaceId:
+                  type: string
+                  description: Slack workspace ID
+                  example: T01234ABCDE
+                channelId:
+                  type: string
+                  description: Slack channel ID
+                  example: C01234ABCDE
+                threadTs:
+                  type: string
+                  description: Thread timestamp (for replies)
+                  example: "1700000000.123456"
+                fileBuffer:
+                  type: string
+                  format: byte
+                  description: Base64-encoded PNG file data
+                fileName:
+                  type: string
+                  description: File name
+                  example: infographic_20251122.png
+                title:
+                  type: string
+                  description: File title (displayed in Slack)
+                  example: NotebookLM Infographic Summary
+                initialComment:
+                  type: string
+                  description: Initial comment when posting file
+                  example: "📊 Visual summary generated"
+              required:
+                - workspaceId
+                - channelId
+                - fileBuffer
+                - fileName
+      responses:
+        '200':
+          description: Upload successful
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SlackFileUploadResult'
+        '400':
+          description: Invalid file (size limit exceeded, unsupported format)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                fileTooLarge:
+                  summary: File size exceeds Slack limits
+                  value:
+                    error: "FILE_TOO_LARGE"
+                    message: "File size (15MB) exceeds Slack limit (10MB for free plan)"
+                    details:
+                      fileSize: 15728640
+                      limit: 10485760
+                      plan: "free"
+        '403':
+          description: Missing Slack permissions (files:write scope)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Slack API error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /media/save-metadata:
+    summary: Media Metadata Storage Contract
+    description: |
+      Contract for SimpleQueue.saveInfographicMetadata() method.
+      Saves infographic metadata (R2 + Slack) to database.
+    post:
+      operationId: saveInfographicMetadata
+      tags:
+        - Database
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MediaMetadataRequest'
+      responses:
+        '201':
+          description: Metadata saved successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  mediaId:
+                    type: integer
+                    description: Auto-generated media record ID
+                    example: 42
+        '500':
+          description: Database error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  schemas:
+    InfographicDetectionResult:
+      type: object
+      properties:
+        detected:
+          type: boolean
+          description: Whether infographic was detected
+          example: true
+        count:
+          type: integer
+          description: Number of infographics found (FR-001 - only first one used)
+          example: 1
+        selector:
+          type: string
+          description: CSS selector used for detection
+          example: "button.artifact-button-content:has(mat-icon.artifact-icon.purple)"
+      required:
+        - detected
+        - count
+
+    InfographicDownloadResult:
+      type: object
+      properties:
+        buffer:
+          type: string
+          format: byte
+          description: Downloaded file as Buffer (Base64 for schema - actual runtime is Node.js Buffer)
+        fileSize:
+          type: integer
+          description: File size in bytes
+          example: 2048576
+        mimeType:
+          type: string
+          description: File MIME type (expected "image/png")
+          example: "image/png"
+        suggestedFilename:
+          type: string
+          description: Suggested filename from Playwright download
+          example: "infographic_20251122.png"
+      required:
+        - buffer
+        - fileSize
+        - mimeType
+
+    SlackFileUploadResult:
+      type: object
+      properties:
+        fileId:
+          type: string
+          description: Slack file ID (format F + 10 alphanumeric chars)
+          example: "F01234ABCDE"
+        permalink:
+          type: string
+          format: uri
+          description: Slack file permalink URL
+          example: "https://workspace.slack.com/files/U01234ABCDE/F01234ABCDE/infographic.png"
+        title:
+          type: string
+          description: File title in Slack
+          example: "NotebookLM Infographic Summary"
+        created:
+          type: integer
+          description: Unix timestamp of file creation
+          example: 1700000000
+      required:
+        - fileId
+        - permalink
+
+    MediaMetadataRequest:
+      type: object
+      properties:
+        requestId:
+          type: integer
+          description: Parent request ID (foreign key)
+          example: 123
+        mediaType:
+          type: string
+          enum: [audio, video, infographic]
+          description: Media type
+          example: infographic
+        r2Key:
+          type: string
+          description: Cloudflare R2 storage key
+          example: "infographic/workspace1/20251122/abc123.png"
+        r2Url:
+          type: string
+          format: uri
+          description: R2 signed URL (7-day expiration)
+          example: "https://pub-xxx.r2.dev/infographic/workspace1/20251122/abc123.png?X-Amz-Expires=604800"
+        expiresAt:
+          type: integer
+          description: R2 URL expiration timestamp (Unix)
+          example: 1700604800
+        fileSize:
+          type: integer
+          description: File size in bytes
+          example: 2048576
+        slackFileId:
+          type: string
+          nullable: true
+          description: Slack file ID (NULL if upload failed)
+          example: "F01234ABCDE"
+        slackPermalink:
+          type: string
+          format: uri
+          nullable: true
+          description: Slack permalink (NULL if upload failed)
+          example: "https://workspace.slack.com/files/U01234ABCDE/F01234ABCDE/infographic.png"
+      required:
+        - requestId
+        - mediaType
+        - r2Key
+        - r2Url
+        - expiresAt
+
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+          description: Error code
+          example: "INFOGRAPHIC_DOWNLOAD_FAILED"
+        message:
+          type: string
+          description: Human-readable error message
+          example: "Failed to download infographic after 3 retries"
+        details:
+          type: object
+          description: Additional error context
+          additionalProperties: true
+          example:
+            attempts: 3
+            lastError: "Timeout waiting for download event"
+      required:
+        - error
+        - message
+
+  securitySchemes:
+    PlaywrightSession:
+      type: apiKey
+      in: header
+      name: X-Playwright-Session
+      description: |
+        Internal Playwright browser session identifier.
+        Not an actual HTTP header - represents browser context authentication.
+
+    SlackOAuth:
+      type: oauth2
+      flows:
+        authorizationCode:
+          authorizationUrl: https://slack.com/oauth/v2/authorize
+          tokenUrl: https://slack.com/api/oauth.v2.access
+          scopes:
+            'files:write': Upload files to Slack
+            'files:read': Read file metadata (for verification)
+            'chat:write': Post messages with file attachments
+            'channels:read': Access channel information
+            'groups:read': Access private channel information
+
+tags:
+  - name: NotebookLM Automation
+    description: Internal automation service for NotebookLM UI interaction
+  - name: Slack Integration
+    description: Slack Bot API integration for file uploads and messaging
+  - name: Database
+    description: SQLite database operations for metadata persistence
+
+externalDocs:
+  description: Feature Specification
+  url: ../spec.md

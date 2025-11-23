@@ -39,6 +39,9 @@ export const newUISelectors: UISelector = {
   generateNotebook: 'div.blue.create-artifact-button-container:has-text("音声解説")', // 音声解説生成ボタン（確認済み）
   summaryArea: 'text="1 ソース"', // ソース追加完了の確認用
 
+  // インフォグラフィック (2025-11-22 Chrome DevTools MCP検証済み)
+  generateInfographic: 'div.pink.create-artifact-button-container:has-text("インフォグラフィック")', // インフォグラフィック生成ボタン（音声/動画と同じパターン）
+
   // アクションフロー定義
   actions: {
     /**

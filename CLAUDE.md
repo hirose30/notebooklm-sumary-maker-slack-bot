@@ -10,6 +10,8 @@ Auto-generated from all feature plans. Last updated: 2025-10-18
 - File-based logging to ./logs/ directory with workspace-specific files (007-log-sqlite-input)
 - TypeScript 5.3.3 + Node.js 20+ + @slack/bolt 4.5.0, better-sqlite3 12.4.1 (005-)
 - SQLite (requests table requires schema change: add ack_message_ts column) (005-)
+- Node.js 20+ with TypeScript 5.3.3 + @slack/bolt 4.5.0, Playwright 1.56.0, better-sqlite3 12.4.1, @aws-sdk/client-s3 ^3.907.0 (009-notebooklm-dl-slack)
+- SQLite (./data/bot.db) + Cloudflare R2 for media files (009-notebooklm-dl-slack)
 
 ## Project Structure
 ```
@@ -28,6 +30,9 @@ npm test [ONLY COMMANDS FOR ACTIVE TECHNOLOGIES][ONLY COMMANDS FOR ACTIVE TECHNO
 Node.js 20+ with TypeScript 5.x: Follow standard conventions
 
 ## Recent Changes
+- 009-notebooklm-dl-slack: Added infographic support - automatic detection, download from NotebookLM, upload to Slack via files.uploadV2 API, R2 storage backup, database metadata (slack_file_id, slack_permalink)
+- 009-notebooklm-dl-slack: Enhanced error handling - partial success support (at least one artifact succeeds), individual artifact error tracking, user-facing error messages in Slack
+- 009-notebooklm-dl-slack: Added Node.js 20+ with TypeScript 5.3.3 + @slack/bolt 4.5.0, Playwright 1.56.0, better-sqlite3 12.4.1, @aws-sdk/client-s3 ^3.907.0
 - 007-log-sqlite-input: Enhanced logging system with configurable log levels (LOG_LEVEL env var), file output to ./logs/ with workspace identifiers, daily rotation, SQLite query filtering
 - 007-log-sqlite-input: Log files named {workspace}-{YYYY-MM-DD}.log (e.g., ws1-2025-10-18.log, system-2025-10-18.log), indefinite retention
 

@@ -62,7 +62,8 @@ export class DatabaseService {
         { version: 1, file: '001_initial.sql' },
         { version: 2, file: '002_add_ack_message_ts.sql' },
         { version: 3, file: '003_multi_workspace.sql' },
-        { version: 4, file: '004_add_ui_version.sql' }
+        { version: 4, file: '004_add_ui_version.sql' },
+        { version: 5, file: '005_add_infographic_support.sql' }
       ];
 
       // Apply pending migrations

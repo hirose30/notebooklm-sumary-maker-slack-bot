@@ -15,12 +15,12 @@ export class RequestProcessor {
   private storage: CloudflareStorage;
   private workspaceKeyMap: Map<string, string>; // teamId -> workspaceKey mapping
   private isProcessing: boolean = false;
-  private onJobComplete?: (job: QueueJob) => Promise<void>;
+  private onJobComplete?: (job: QueueJob, infographicBuffer?: Buffer, errors?: string[]) => Promise<void>;
   private onJobError?: (job: QueueJob, error: Error) => Promise<void>;
 
   constructor(
     workspaceKeyMap: Map<string, string>,
-    onJobComplete?: (job: QueueJob) => Promise<void>,
+    onJobComplete?: (job: QueueJob, infographicBuffer?: Buffer, errors?: string[]) => Promise<void>,
     onJobError?: (job: QueueJob, error: Error) => Promise<void>
   ) {
     this.queue = new SimpleQueue();
@@ -86,69 +86,143 @@ export class RequestProcessor {
 
       await notebooklm.generateBothOverviews();
 
-      // Download audio
+      // FR-008: Download all artifacts with individual error handling
+      // At least one artifact must succeed for the job to be considered successful
       this.queue.updateJobStatus(job.id, 'processing', {
         progress: 70,
-        currentStep: 'Downloading audio',
+        currentStep: 'Downloading artifacts',
       });
 
-      const audioBuffer = await notebooklm.downloadMedia('audio');
+      let audioBuffer: Buffer | null = null;
+      let videoBuffer: Buffer | null = null;
+      let infographicBuffer: Buffer | null = null;
+
+      const errors: string[] = [];
+
+      // Download audio
+      try {
+        audioBuffer = await notebooklm.downloadMedia('audio');
+        jobLogger.info('Audio downloaded successfully', { size: audioBuffer.length });
+      } catch (audioError) {
+        const errorMsg = audioError instanceof Error ? audioError.message : 'Unknown error';
+        jobLogger.warn('Audio download failed', { error: audioError });
+        errors.push(`音声生成エラー: ${errorMsg}`);
+      }
 
       // Download video
-      this.queue.updateJobStatus(job.id, 'processing', {
-        progress: 80,
-        currentStep: 'Downloading video',
-      });
+      try {
+        videoBuffer = await notebooklm.downloadMedia('video');
+        jobLogger.info('Video downloaded successfully', { size: videoBuffer.length });
+      } catch (videoError) {
+        const errorMsg = videoError instanceof Error ? videoError.message : 'Unknown error';
+        jobLogger.warn('Video download failed', { error: videoError });
+        errors.push(`動画生成エラー: ${errorMsg}`);
+      }
 
-      const videoBuffer = await notebooklm.downloadMedia('video');
+      // Download infographic (if available)
+      try {
+        const infographicResult = await notebooklm.detectInfographic();
+        if (infographicResult.detected) {
+          jobLogger.info('Infographic detected, downloading', { count: infographicResult.count });
+          infographicBuffer = await notebooklm.downloadInfographic();
+          jobLogger.info('Infographic downloaded successfully', { size: infographicBuffer.length });
+        } else {
+          jobLogger.info('No infographic detected');
+        }
+      } catch (infographicError) {
+        const errorMsg = infographicError instanceof Error ? infographicError.message : 'Unknown error';
+        jobLogger.warn('Infographic download failed', { error: infographicError });
+        errors.push(`インフォグラフィック生成エラー: ${errorMsg}`);
+      }
 
-      // Upload audio to R2
-      this.queue.updateJobStatus(job.id, 'processing', {
-        progress: 85,
-        currentStep: 'Uploading audio to R2',
-      });
+      // Check if at least one artifact succeeded
+      if (!audioBuffer && !videoBuffer && !infographicBuffer) {
+        throw new Error('All artifacts failed to generate: ' + errors.join(', '));
+      }
 
-      const audioFilename = `audio-${job.id}.m4a`;
-      const audioKey = await this.storage.uploadMedia(
-        audioBuffer,
-        audioFilename,
-        'audio/mp4'
-      );
-      const audioUrl = await this.storage.getPublicUrl(audioKey);
+      // Upload audio to R2 (if available)
+      if (audioBuffer) {
+        this.queue.updateJobStatus(job.id, 'processing', {
+          progress: 85,
+          currentStep: 'Uploading audio to R2',
+        });
 
-      this.queue.saveMedia({
-        requestId: job.id,
-        mediaType: 'audio',
-        filename: audioFilename,
-        r2Key: audioKey,
-        r2PublicUrl: audioUrl,
-        fileSize: audioBuffer.length,
-        expiresAt: '', // Will be calculated in saveMedia
-      });
+        const audioFilename = `audio-${job.id}.m4a`;
+        const audioKey = await this.storage.uploadMedia(
+          audioBuffer,
+          audioFilename,
+          'audio/mp4'
+        );
+        const audioUrl = await this.storage.getPublicUrl(audioKey);
 
-      // Upload video to R2
-      this.queue.updateJobStatus(job.id, 'processing', {
-        progress: 95,
-        currentStep: 'Uploading video to R2',
-      });
+        this.queue.saveMedia({
+          requestId: job.id,
+          mediaType: 'audio',
+          filename: audioFilename,
+          r2Key: audioKey,
+          r2PublicUrl: audioUrl,
+          fileSize: audioBuffer.length,
+          expiresAt: '', // Will be calculated in saveMedia
+        });
+      }
 
-      const videoFilename = `video-${job.id}.mp4`;
-      const videoKey = await this.storage.uploadMedia(
-        videoBuffer,
-        videoFilename,
-        'video/mp4'
-      );
-      const videoUrl = await this.storage.getPublicUrl(videoKey);
+      // Upload video to R2 (if available)
+      if (videoBuffer) {
+        this.queue.updateJobStatus(job.id, 'processing', {
+          progress: 95,
+          currentStep: 'Uploading video to R2',
+        });
 
-      this.queue.saveMedia({
-        requestId: job.id,
-        mediaType: 'video',
-        filename: videoFilename,
-        r2Key: videoKey,
-        r2PublicUrl: videoUrl,
-        fileSize: videoBuffer.length,
-        expiresAt: '', // Will be calculated in saveMedia
-      });
+        const videoFilename = `video-${job.id}.mp4`;
+        const videoKey = await this.storage.uploadMedia(
+          videoBuffer,
+          videoFilename,
+          'video/mp4'
+        );
+        const videoUrl = await this.storage.getPublicUrl(videoKey);
+
+        this.queue.saveMedia({
+          requestId: job.id,
+          mediaType: 'video',
+          filename: videoFilename,
+          r2Key: videoKey,
+          r2PublicUrl: videoUrl,
+          fileSize: videoBuffer.length,
+          expiresAt: '', // Will be calculated in saveMedia
+        });
+      }
+
+      // Upload infographic to R2 (if available)
+      // T014: Save infographic metadata to database
+      if (infographicBuffer) {
+        this.queue.updateJobStatus(job.id, 'processing', {
+          progress: 98,
+          currentStep: 'Uploading infographic to R2',
+        });
+
+        const infographicFilename = `infographic-${job.id}.png`;
+        const infographicKey = await this.storage.uploadMedia(
+          infographicBuffer,
+          infographicFilename,
+          'image/png'
+        );
+        const infographicUrl = await this.storage.getPublicUrl(infographicKey);
+
+        this.queue.saveMedia({
+          requestId: job.id,
+          mediaType: 'infographic',
+          filename: infographicFilename,
+          r2Key: infographicKey,
+          r2PublicUrl: infographicUrl,
+          fileSize: infographicBuffer.length,
+          expiresAt: '', // Will be calculated in saveMedia
+        });
+
+        jobLogger.info('Infographic uploaded to R2 successfully', {
+          size: infographicBuffer.length,
+          key: infographicKey,
+        });
+      }
 
       // Mark as completed
       this.queue.updateJobStatus(job.id, 'completed', {
@@ -158,13 +232,16 @@ export class RequestProcessor {
 
         jobLogger.info('Request processed successfully', {
           id: job.id,
-          audioSize: audioBuffer.length,
-          videoSize: videoBuffer.length,
+          audioSize: audioBuffer?.length || 0,
+          videoSize: videoBuffer?.length || 0,
+          hasInfographic: !!infographicBuffer,
+          errors: errors.length > 0 ? errors : undefined,
         });
 
         // Call completion callback (e.g., to notify Slack)
+        // Pass errors array so Slack can display them
         if (this.onJobComplete) {
-          await this.onJobComplete(job);
+          await this.onJobComplete(job, infographicBuffer || undefined, errors);
         }
       } catch (error) {
         jobLogger.error('Failed to process request', { error, id: job.id });

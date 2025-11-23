@@ -9,7 +9,7 @@ import { config } from '../lib/config.js';
 import { logger } from '../lib/logger.js';
 import { UISelectorFactory } from './ui-selector-factory.js';
 import type { UIVersion } from '../models/ui-version.js';
-import type { UISelector } from '../lib/ui-selectors/types.js';
+import type { UISelector, InfographicResult } from '../lib/ui-selectors/types.js';
 
 /**
  * Retry configuration
@@ -402,74 +402,207 @@ export class NotebookLMAutomation {
   }
 
   /**
+   * Detect Infographic
+   * T008: Implement infographic detection
+   * Uses selector: button.artifact-button-content:has(mat-icon.artifact-icon.pink)
+   * FR-001: Detect infographic availability after generation
+   */
+  async detectInfographic(): Promise<InfographicResult> {
+    const page = this.getPage();
+
+    try {
+      logger.info('Detecting infographic...');
+
+      // Find all infographic artifact cards (pink icon)
+      const infographicCards = await page.locator('button.artifact-button-content:has(mat-icon.artifact-icon.pink)').all();
+      const count = infographicCards.length;
+
+      if (count === 0) {
+        logger.info('Infographic not detected');
+        return { detected: false };
+      }
+
+      // T008: Log INFO when multiple detected (DOM順で最初のみ使用)
+      if (count > 1) {
+        logger.info(`Multiple infographics detected (count: ${count}), using first one (DOM order)`);
+      }
+
+      logger.info('Infographic detected', { count });
+      return {
+        detected: true,
+        count,
+      };
+    } catch (error) {
+      logger.error('Failed to detect infographic', { error });
+      return { detected: false };
+    }
+  }
+
+  /**
    * Generate both Audio and Video Overviews in parallel
    * This is more efficient than sequential generation
    * T016: Uses UI version-specific selectors from getSelectors()
+   * FR-008: Individual error handling - continues even if some artifacts fail
    */
   async generateBothOverviews(): Promise<void> {
     const page = this.getPage();
     const selectors = this.getSelectors();
 
-    logger.info('Generating both Audio and Video Overviews in parallel', {
+    logger.info('Generating Audio, Video, and Infographic in parallel', {
       uiVersion: this.uiVersion,
     });
 
-    // Click both buttons
+    // Click all three buttons
     // T016: Use UI version-specific selector for audio
     await page.locator(selectors.generateNotebook).click();
     logger.info('Audio Overview generation started');
 
-    // Note: Video button is hardcoded as we don't have a video-specific selector yet
+    // Video button
     await page.locator('div.green.create-artifact-button-container:has-text("動画解説")').click();
     logger.info('Video Overview generation started');
 
-    // Wait for both generation status messages to appear
-    await page.waitForSelector(':text("音声解説を生成しています")', { timeout: 10000 });
-    await page.waitForSelector(':text("動画解説を生成しています")', { timeout: 10000 });
-    logger.info('Both generations in progress...');
+    // Infographic button (follows same pattern as audio/video)
+    await page.locator('div.pink.create-artifact-button-container:has-text("インフォグラフィック")').click();
+    logger.info('Infographic generation started');
 
-    // Wait for both to complete by detecting when "generating" messages disappear
-    logger.info('Waiting for both generations to complete (may take several minutes)...');
+    // Wait for all three generation status messages to appear (with individual try-catch)
+    try {
+      await page.waitForSelector(':text("音声解説を生成しています")', { timeout: 10000 });
+    } catch (error) {
+      logger.warn('Audio generation status message not found - may have failed to start');
+    }
 
-    // Wait for audio generation to complete
-    await page.waitForSelector(':text("音声解説を生成しています")', {
-      state: 'hidden',
-      timeout: 30 * 60 * 1000
+    try {
+      await page.waitForSelector(':text("動画解説を生成しています")', { timeout: 10000 });
+    } catch (error) {
+      logger.warn('Video generation status message not found - may have failed to start');
+    }
+
+    // Note: Infographic may not have a visible "generating" message, so we skip waiting for it
+    logger.info('All generations in progress...');
+
+    // Wait for all to complete by detecting when "generating" messages disappear
+    // Use Promise.allSettled to handle individual failures
+    logger.info('Waiting for all generations to complete (may take several minutes)...');
+
+    const results = await Promise.allSettled([
+      // Wait for audio generation to complete or error
+      page.waitForSelector(':text("音声解説を生成しています")', {
+        state: 'hidden',
+        timeout: 30 * 60 * 1000
+      }).then(() => ({ type: 'audio', success: true }))
+        .catch((error) => {
+          logger.warn('Audio generation may have failed or timed out', { error: error.message });
+          return { type: 'audio', success: false, error: error.message };
+        }),
+
+      // Wait for video generation to complete or error
+      page.waitForSelector(':text("動画解説を生成しています")', {
+        state: 'hidden',
+        timeout: 30 * 60 * 1000
+      }).then(() => ({ type: 'video', success: true }))
+        .catch((error) => {
+          logger.warn('Video generation may have failed or timed out', { error: error.message });
+          return { type: 'video', success: false, error: error.message };
+        }),
+    ]);
+
+    // Log results
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        const value = result.value;
+        if (value.success) {
+          logger.info(`${value.type} generation message disappeared`);
+        } else {
+          logger.warn(`${value.type} generation failed`, { error: (value as any).error });
+        }
+      } else {
+        logger.error('Generation promise rejected unexpectedly', { error: result.reason });
+      }
     });
-    logger.info('Audio generation message disappeared');
-
-    // Wait for video generation to complete
-    await page.waitForSelector(':text("動画解説を生成しています")', {
-      state: 'hidden',
-      timeout: 30 * 60 * 1000
-    });
-    logger.info('Video generation message disappeared');
 
     // Wait a moment for artifact cards to appear
     await page.waitForTimeout(2000);
 
-    // Verify both artifact cards appeared
+    // Verify all artifact cards appeared
     const audioCards = await page.locator('button.artifact-button-content:has(mat-icon.artifact-icon.blue)').count();
     const videoCards = await page.locator('button.artifact-button-content:has(mat-icon.artifact-icon.green)').count();
+    const infographicCards = await page.locator('button.artifact-button-content:has(mat-icon.artifact-icon.pink)').count();
     logger.info(`Audio artifact cards found: ${audioCards}`);
     logger.info(`Video artifact cards found: ${videoCards}`);
+    logger.info(`Infographic artifact cards found: ${infographicCards}`);
 
-    logger.info('Both Audio and Video Overviews generated successfully');
+    logger.info('Audio, Video, and Infographic generation completed (with possible partial failures)');
   }
 
   /**
-   * Download generated media (audio or video)
+   * Alias for generateBothOverviews() - more accurate name since it handles all three artifacts
+   * T010: Create generateAllOverviews() method for clarity
+   */
+  async generateAllOverviews(): Promise<void> {
+    return this.generateBothOverviews();
+  }
+
+  /**
+   * Download generated infographic (PNG file)
+   * T009: Infographic download using hamburger menu → Download pattern
+   */
+  async downloadInfographic(): Promise<Buffer> {
+    const page = this.getPage();
+
+    try {
+      logger.info('Downloading infographic');
+
+      // Find infographic card using pink icon (Phase 0 verified)
+      const artifactCard = page.locator('button.artifact-button-content:has(mat-icon.artifact-icon.pink)').first();
+
+      // Click hamburger menu (more_vert) within that specific card
+      await artifactCard.locator('mat-icon:text("more_vert")').click();
+
+      // Wait a moment for menu to expand
+      await page.waitForTimeout(500);
+
+      // Wait for and click download button
+      const [download] = await Promise.all([
+        page.waitForEvent('download'),
+        page.click('text="ダウンロード"'),
+      ]);
+
+      // Save to buffer
+      const path = await download.path();
+      if (!path) {
+        throw new Error('Infographic download failed - no file path');
+      }
+
+      const fs = await import('fs/promises');
+      const buffer = await fs.readFile(path);
+
+      logger.info('Infographic downloaded successfully', {
+        size: buffer.length,
+        filename: download.suggestedFilename(),
+      });
+
+      return buffer;
+    } catch (error) {
+      logger.error('Failed to download infographic', { error });
+      throw error;
+    }
+  }
+
+  /**
+   * Download generated media (audio, video, or infographic)
+   * T009: Extended to support 'infographic' type
    * Helper method for retrieving generated content
    */
-  async downloadMedia(type: 'audio' | 'video'): Promise<Buffer> {
+  async downloadMedia(type: 'audio' | 'video' | 'infographic'): Promise<Buffer> {
     const page = this.getPage();
 
     try {
       logger.info('Downloading media', { type });
 
       // Find the correct artifact card based on type
-      // Audio cards have blue icon, video cards have green icon
-      const iconClass = type === 'audio' ? 'blue' : 'green';
+      // Audio cards have blue icon, video cards have green icon, infographic cards have pink icon
+      const iconClass = type === 'audio' ? 'blue' : type === 'video' ? 'green' : 'pink';
       const artifactCard = page.locator(`button.artifact-button-content:has(mat-icon.artifact-icon.${iconClass})`).first();
 
       // Click hamburger menu (more_vert) within that specific card

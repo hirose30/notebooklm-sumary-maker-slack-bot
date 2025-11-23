@@ -25,12 +25,14 @@ export interface QueueJob {
 export interface MediaRecord {
   id?: number;
   requestId: number;
-  mediaType: 'audio' | 'video';
+  mediaType: 'audio' | 'video' | 'infographic';
   filename: string;
   r2Key: string;
   r2PublicUrl: string;
   fileSize: number;
   expiresAt: string;
+  slackFileId?: string;
+  slackPermalink?: string;
 }
 
 export class SimpleQueue {
@@ -186,6 +188,38 @@ export class SimpleQueue {
   }
 
   /**
+   * Update Slack file metadata for a media record
+   * T014: Save slack_file_id and slack_permalink to database
+   */
+  updateMediaSlackInfo(
+    requestId: number,
+    mediaType: 'audio' | 'video' | 'infographic',
+    slackFileId: string,
+    slackPermalink: string
+  ): void {
+    const stmt = db.prepare(`
+      UPDATE media
+      SET slack_file_id = ?, slack_permalink = ?
+      WHERE request_id = ? AND media_type = ?
+    `);
+
+    const result = stmt.run(slackFileId, slackPermalink, requestId, mediaType);
+
+    if (result.changes === 0) {
+      logger.warn('No media record found to update Slack info', {
+        requestId,
+        mediaType,
+      });
+    } else {
+      logger.info('Slack metadata updated for media record', {
+        requestId,
+        mediaType,
+        slackFileId,
+      });
+    }
+  }
+
+  /**
    * Get media records for a request
    */
   getMediaForRequest(requestId: number): MediaRecord[] {
@@ -206,7 +240,36 @@ export class SimpleQueue {
       r2PublicUrl: row.r2_public_url,
       fileSize: row.file_size,
       expiresAt: row.expires_at,
+      slackFileId: row.slack_file_id,
+      slackPermalink: row.slack_permalink,
     }));
+  }
+
+  /**
+   * Update media record with Slack file metadata (T015)
+   */
+  updateMediaWithSlackInfo(
+    mediaId: number,
+    slackFileId: string,
+    slackPermalink: string
+  ): void {
+    const stmt = db.prepare(`
+      UPDATE media
+      SET slack_file_id = ?, slack_permalink = ?
+      WHERE id = ?
+    `);
+
+    const result = stmt.run(slackFileId, slackPermalink, mediaId);
+
+    if (result.changes === 0) {
+      logger.error('Media record not found when updating Slack info', { mediaId });
+      throw new Error(`Media record not found: ${mediaId}`);
+    }
+
+    logger.info('Updated media record with Slack metadata', {
+      mediaId,
+      slackFileId,
+    });
   }
 
   /**

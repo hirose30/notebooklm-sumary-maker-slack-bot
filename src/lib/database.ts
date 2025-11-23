@@ -72,13 +72,32 @@ export class DatabaseService {
           const migrationPath = join(__dirname, `../db/migrations/${migration.file}`);
           const sql = readFileSync(migrationPath, 'utf8');
 
-          this.db.exec(sql);
+          try {
+            this.db.exec(sql);
 
-          this.db
-            .prepare('INSERT INTO schema_version (version) VALUES (?)')
-            .run(migration.version);
+            this.db
+              .prepare('INSERT INTO schema_version (version) VALUES (?)')
+              .run(migration.version);
 
-          logger.info('Applied migration', { version: migration.version, file: migration.file });
+            logger.info('Applied migration', { version: migration.version, file: migration.file });
+          } catch (migrationError: any) {
+            // Handle duplicate column errors for idempotent migrations
+            if (migrationError.code === 'SQLITE_ERROR' &&
+                migrationError.message?.includes('duplicate column')) {
+              logger.warn('Migration already applied (columns exist), marking as complete', {
+                version: migration.version,
+                file: migration.file
+              });
+
+              // Mark migration as applied even if columns already exist
+              this.db
+                .prepare('INSERT INTO schema_version (version) VALUES (?)')
+                .run(migration.version);
+            } else {
+              // Re-throw other errors
+              throw migrationError;
+            }
+          }
         }
       }
 

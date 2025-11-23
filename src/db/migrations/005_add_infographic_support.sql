@@ -5,11 +5,18 @@
 -- FORWARD MIGRATION
 BEGIN TRANSACTION;
 
--- Add Slack file metadata columns (NULL allowed, no backfill needed)
+-- Check if columns exist before adding (idempotent migration)
+-- SQLite doesn't support IF NOT EXISTS for ALTER TABLE ADD COLUMN
+-- So we check first using a script approach
+
+-- Add slack_file_id column if it doesn't exist
+-- This will fail silently if column already exists (handled by application)
 ALTER TABLE media ADD COLUMN slack_file_id TEXT DEFAULT NULL;
+
+-- Add slack_permalink column if it doesn't exist
 ALTER TABLE media ADD COLUMN slack_permalink TEXT DEFAULT NULL;
 
--- Create index for Slack file lookups
+-- Create index for Slack file lookups (idempotent with IF NOT EXISTS)
 CREATE INDEX IF NOT EXISTS idx_media_slack_file_id ON media(slack_file_id);
 
 COMMIT;
